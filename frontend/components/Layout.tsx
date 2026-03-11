@@ -178,13 +178,13 @@ export const Navbar = ({ setIsMobileOpen }: { setIsMobileOpen: (v: boolean) => v
                 >
                     <Menu size={24} />
                 </button>
-                <div className="hidden md:block">
+                {/* <div className="hidden md:block">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">System Status</p>
                     <div className="flex items-center gap-2 mt-0.5">
                         <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
                         <span className="text-sm font-medium text-emerald-500/90 whitespace-nowrap">Mainnet Linked</span>
                     </div>
-                </div>
+                </div> */}
             </div>
 
             <div className="flex items-center gap-4">

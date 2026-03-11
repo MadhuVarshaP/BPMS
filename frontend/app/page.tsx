@@ -1,14 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { useWallet } from "@/context/WalletContext";
-import { ShieldCheck, ArrowRight, Zap, Lock, Database, Globe } from "lucide-react";
+import { ShieldCheck, ArrowRight, Lock, Database, Globe } from "lucide-react";
 import { Button } from "@/components/UI";
 import { motion } from "framer-motion";
 
 export default function LandingPage() {
   const { connectWallet, isLoading } = useWallet();
-  const [hoveredFeature, setHoveredFeature] = useState<number | null>(null);
 
   const features = [
     { icon: Lock, title: "Zero Trust", description: "Immutable patch verification via blockchain hashing." },
@@ -23,8 +22,8 @@ export default function LandingPage() {
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-500/10 blur-[120px] rounded-full pointer-events-none" />
 
       {/* Hero Content */}
-      <div className="container mx-auto px-6 pt-32 pb-24 relative z-10 flex flex-col items-center text-center">
-        <motion.div
+      <div className="container mx-auto px-6 pt-20 pb-24 relative z-10 flex flex-col items-center text-center">
+        {/* <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
@@ -32,7 +31,7 @@ export default function LandingPage() {
         >
           <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="text-sm font-bold tracking-widest text-emerald-500/90 uppercase">V1.0 Live on Mainnet</span>
-        </motion.div>
+        </motion.div> */}
 
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
@@ -136,8 +135,6 @@ export default function LandingPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.6 + (idx * 0.1) }}
-              onMouseEnter={() => setHoveredFeature(idx)}
-              onMouseLeave={() => setHoveredFeature(null)}
               className="glass-dark border border-white/5 p-8 rounded-3xl hover:border-emerald-500/30 transition-all duration-500 group"
             >
               <div className="bg-emerald-500/10 w-14 h-14 rounded-2xl flex items-center justify-center text-emerald-500 mb-6 group-hover:scale-110 transition-transform duration-500">
