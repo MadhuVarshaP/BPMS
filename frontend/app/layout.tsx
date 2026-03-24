@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
+import "@rainbow-me/rainbowkit/styles.css";
 import { WalletProvider } from "@/context/WalletContext";
 import { ToastProvider } from "@/context/ToastContext";
+import { Web3Provider } from "@/context/Web3Provider";
 
 const outfit = Outfit({
   variable: "--font-sans",
@@ -27,11 +29,13 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${outfit.variable} ${inter.variable} antialiased selection:bg-emerald-500/30`}>
-        <ToastProvider>
-          <WalletProvider>
-            {children}
-          </WalletProvider>
-        </ToastProvider>
+        <Web3Provider>
+          <ToastProvider>
+            <WalletProvider>
+              {children}
+            </WalletProvider>
+          </ToastProvider>
+        </Web3Provider>
       </body>
     </html>
   );

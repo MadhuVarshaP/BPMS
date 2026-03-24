@@ -1,71 +1,115 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ADMIN_ADDRESS, PUBLISHER_LIST, DEVICE_LIST } from "@/data/mockData";
+import { useAccount, useDisconnect } from "wagmi";
 
 type Role = "admin" | "publisher" | "device" | "unauthorized" | null;
 
 interface WalletContextType {
-    address: string | null;
-    role: Role;
-    isLoading: boolean;
-    connectWallet: (mockAddress?: string) => void;
-    disconnectWallet: () => void;
+  address: string | null;
+  role: Role;
+  isLoading: boolean;
+  connectWallet: () => void;
+  disconnectWallet: () => void;
+  isConnected: boolean;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-    const [address, setAddress] = useState<string | null>(null);
-    const [role, setRole] = useState<Role>(null);
-    const [isLoading, setIsLoading] = useState(false);
-    const router = useRouter();
+  const router = useRouter();
+  const { address, isConnected, isConnecting, isReconnecting } = useAccount();
+  const { disconnect } = useDisconnect();
+  const [role, setRole] = useState<Role>(null);
+  const [isRoleLoading, setIsRoleLoading] = useState(false);
 
-    const getRole = (addr: string): Role => {
-        if (addr.toLowerCase() === ADMIN_ADDRESS.toLowerCase()) return "admin";
-        if (PUBLISHER_LIST.some((p) => p.toLowerCase() === addr.toLowerCase())) return "publisher";
-        if (DEVICE_LIST.some((d) => d.toLowerCase() === addr.toLowerCase())) return "device";
-        return "unauthorized";
-    };
+  const normalizedAddress = useMemo(
+    () => (address ? address.toLowerCase() : null),
+    [address]
+  );
 
-    const connectWallet = (mockAddress?: string) => {
-        setIsLoading(true);
-        // Simulate wallet connection delay
-        setTimeout(() => {
-            const addr = mockAddress || ADMIN_ADDRESS; // Default to admin for easy testing if no address provided
-            const detectedRole = getRole(addr);
+  const connectWallet = () => {
+    // RainbowKit ConnectButton handles modal opening
+  };
 
-            setAddress(addr);
-            setRole(detectedRole);
-            setIsLoading(false);
+  const disconnectWallet = () => {
+    disconnect();
+    setRole(null);
+    router.push("/");
+  };
 
-            if (detectedRole === "admin") router.push("/admin/dashboard");
-            else if (detectedRole === "publisher") router.push("/publisher/dashboard");
-            else if (detectedRole === "device") router.push("/device/dashboard");
-            else router.push("/unauthorized");
-        }, 1000);
-    };
+  useEffect(() => {
+    let isCancelled = false;
 
-    const disconnectWallet = () => {
-        setAddress(null);
+    async function resolveRole() {
+      if (!normalizedAddress) {
         setRole(null);
-        router.push("/");
-    };
+        return;
+      }
 
-    return (
-        <WalletContext.Provider
-            value={{ address, role, isLoading, connectWallet, disconnectWallet }}
-        >
-            {children}
-        </WalletContext.Provider>
-    );
+      setIsRoleLoading(true);
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+        const response = await fetch(`${baseUrl}/api/user/role/${normalizedAddress}`, {
+          cache: "no-store"
+        });
+
+        if (!response.ok) {
+          if (!isCancelled) setRole("unauthorized");
+          return;
+        }
+
+        const data = (await response.json()) as { role?: Role; status?: string };
+        const detectedRole =
+          data.status === "active" &&
+          (data.role === "admin" || data.role === "publisher" || data.role === "device")
+            ? data.role
+            : "unauthorized";
+
+        if (!isCancelled) setRole(detectedRole);
+      } catch {
+        if (!isCancelled) setRole("unauthorized");
+      } finally {
+        if (!isCancelled) setIsRoleLoading(false);
+      }
+    }
+
+    void resolveRole();
+    return () => { isCancelled = true; };
+  }, [normalizedAddress]);
+
+  useEffect(() => {
+    if (!isConnected || isRoleLoading || !role) return;
+
+    if (role === "admin") router.push("/admin/dashboard");
+    else if (role === "publisher") router.push("/publisher/dashboard");
+    else if (role === "device") router.push("/device/dashboard");
+    else router.push("/unauthorized");
+  }, [isConnected, isRoleLoading, role, router]);
+
+  const isLoading = isConnecting || isReconnecting || isRoleLoading;
+
+  return (
+    <WalletContext.Provider
+      value={{
+        address: normalizedAddress,
+        role,
+        isLoading,
+        connectWallet,
+        disconnectWallet,
+        isConnected
+      }}
+    >
+      {children}
+    </WalletContext.Provider>
+  );
 }
 
 export function useWallet() {
-    const context = useContext(WalletContext);
-    if (context === undefined) {
-        throw new Error("useWallet must be used within a WalletProvider");
-    }
-    return context;
+  const context = useContext(WalletContext);
+  if (context === undefined) {
+    throw new Error("useWallet must be used within a WalletProvider");
+  }
+  return context;
 }

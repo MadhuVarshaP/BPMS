@@ -1,5 +1,9 @@
 const User = require("../models/User");
-const { normalizeAddress } = require("../config/blockchain");
+const {
+  getContractAdminAddress,
+  getReadOnlyContract,
+  normalizeAddress
+} = require("../config/blockchain");
 
 async function upsertUser(walletAddress, role, status = "active") {
   const normalizedAddress = normalizeAddress(walletAddress);
@@ -18,7 +22,58 @@ async function ensureAdminUser() {
   await upsertUser(adminWallet, "admin", "active");
 }
 
+async function resolveRoleFromChain(walletAddress) {
+  const normalizedAddress = normalizeAddress(walletAddress);
+  const contract = getReadOnlyContract();
+
+  try {
+    const adminAddress = await getContractAdminAddress();
+    if (adminAddress === normalizedAddress) {
+      return "admin";
+    }
+  } catch (_) {
+    // Continue trying other role checks.
+  }
+
+  try {
+    const isPublisher = await contract.authorizedPublishers(normalizedAddress);
+    if (isPublisher) {
+      return "publisher";
+    }
+  } catch (_) {
+    // Continue trying other role checks.
+  }
+
+  try {
+    const isDevice = await contract.registeredDevices(normalizedAddress);
+    if (isDevice) {
+      return "device";
+    }
+  } catch (_) {
+    // Fall through to unauthorized.
+  }
+
+  return null;
+}
+
+async function ensureUserFromChain(walletAddress) {
+  const normalizedAddress = normalizeAddress(walletAddress);
+  const existing = await User.findOne({ walletAddress: normalizedAddress });
+  if (existing) {
+    return existing;
+  }
+
+  const role = await resolveRoleFromChain(normalizedAddress);
+  if (!role) {
+    return null;
+  }
+
+  return upsertUser(normalizedAddress, role, "active");
+}
+
 module.exports = {
   upsertUser,
-  ensureAdminUser
+  ensureAdminUser,
+  resolveRoleFromChain,
+  ensureUserFromChain
 };

@@ -2,9 +2,14 @@ require("dotenv").config();
 
 const axios = require("axios");
 const crypto = require("crypto");
+const { ethers } = require("ethers");
+const contractAbi = require("../config/contractAbi.json");
 
 const API_BASE = process.env.API_BASE_URL || "http://localhost:3001";
 const WALLET_ADDRESS = process.env.DEVICE_WALLET_ADDRESS;
+const DEVICE_PRIVATE_KEY = process.env.DEVICE_PRIVATE_KEY;
+const RPC_URL = process.env.RPC_URL;
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const IPFS_GATEWAY =
   process.env.IPFS_GATEWAY || "https://gateway.pinata.cloud/ipfs";
 
@@ -43,10 +48,11 @@ async function downloadPatchBuffer(ipfsHash) {
 
 async function reportInstallation(patchId, success) {
   await axios.post(
-    `${API_BASE}/api/device/report-installation`,
+    `${API_BASE}/api/device/report`,
     {
+      deviceAddress: WALLET_ADDRESS,
       patchId,
-      success
+      status: success ? "success" : "failure"
     },
     {
       headers: authHeaders()
@@ -54,14 +60,32 @@ async function reportInstallation(patchId, success) {
   );
 }
 
+async function reportInstallationOnChain(contract, patchId, success) {
+  const tx = await contract.reportInstallation(patchId, success);
+  await tx.wait();
+}
+
 async function run() {
   if (!WALLET_ADDRESS) {
     throw new Error("DEVICE_WALLET_ADDRESS is required");
+  }
+  if (!DEVICE_PRIVATE_KEY) {
+    throw new Error("DEVICE_PRIVATE_KEY is required");
+  }
+  if (!RPC_URL || !CONTRACT_ADDRESS) {
+    throw new Error("RPC_URL and CONTRACT_ADDRESS are required");
   }
 
   console.log(
     `Device Agent starting for wallet: ${WALLET_ADDRESS}`
   );
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const signer = new ethers.Wallet(DEVICE_PRIVATE_KEY, provider);
+  const contract = new ethers.Contract(CONTRACT_ADDRESS, contractAbi, signer);
+
+  if (signer.address.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+    throw new Error("DEVICE_PRIVATE_KEY does not match DEVICE_WALLET_ADDRESS");
+  }
 
   const patches = await fetchAvailablePatches();
 
@@ -92,20 +116,21 @@ async function run() {
 
       if (!isValid) {
         console.log(`❌ Patch ${patch.patchId} rejected: hash mismatch`);
+        await reportInstallationOnChain(contract, patch.patchId, false);
         await reportInstallation(patch.patchId, false);
         continue;
       }
 
       await new Promise((resolve) => setTimeout(resolve, 1000));
       console.log(`✅ Patch ${patch.patchId} installed successfully`);
+      await reportInstallationOnChain(contract, patch.patchId, true);
       await reportInstallation(patch.patchId, true);
     } catch (error) {
       console.error(
         `❌ Patch ${patch.patchId} failed: ${error.message}`
       );
-      await reportInstallation(patch.patchId, false).catch(
-        () => {}
-      );
+      await reportInstallationOnChain(contract, patch.patchId, false).catch(() => {});
+      await reportInstallation(patch.patchId, false).catch(() => {});
     }
   }
 }

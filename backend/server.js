@@ -6,6 +6,7 @@ const helmet = require("helmet");
 
 const connectDB = require("./config/db");
 const { initBlockchain } = require("./config/blockchain");
+const { startEventSyncListener } = require("./services/eventSyncService");
 const { ensureAdminUser } = require("./services/userService");
 const logger = require("./utils/logger");
 
@@ -53,6 +54,7 @@ async function bootstrap() {
 
   try {
     initBlockchain();
+    startEventSyncListener();
     logger.info("Blockchain initialized successfully");
   } catch (error) {
     logger.error("Blockchain initialization warning", error.message);

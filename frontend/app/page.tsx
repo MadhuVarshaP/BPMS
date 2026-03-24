@@ -5,9 +5,10 @@ import { useWallet } from "@/context/WalletContext";
 import { ShieldCheck, ArrowRight, Lock, Database, Globe } from "lucide-react";
 import { Button } from "@/components/UI";
 import { motion } from "framer-motion";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 
 export default function LandingPage() {
-  const { connectWallet, isLoading } = useWallet();
+  const { isLoading, isConnected, address } = useWallet();
 
   const features = [
     { icon: Lock, title: "Zero Trust", description: "Immutable patch verification via blockchain hashing." },
@@ -17,22 +18,10 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-[#020617] text-white relative overflow-hidden selection:bg-emerald-500/30">
-      {/* Background Decorative Blobs */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-500/10 blur-[120px] rounded-full pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-500/10 blur-[120px] rounded-full pointer-events-none" />
 
-      {/* Hero Content */}
       <div className="container mx-auto px-6 pt-20 pb-24 relative z-10 flex flex-col items-center text-center">
-        {/* <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-full mb-10"
-        >
-          <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-sm font-bold tracking-widest text-emerald-500/90 uppercase">V1.0 Live on Mainnet</span>
-        </motion.div> */}
-
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -70,63 +59,75 @@ export default function LandingPage() {
           transition={{ duration: 0.6, delay: 0.5 }}
           className="flex flex-col sm:flex-row gap-6 w-full sm:w-auto"
         >
-          <Button
-            onClick={() => connectWallet()}
-            isLoading={isLoading}
-            variant="primary"
-            size="lg"
-            className="text-lg px-12 py-8 rounded-2xl group shadow-[0_0_30px_rgba(16,185,129,0.4)]"
-          >
-            Connect Web3 Wallet
-            <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" size={20} />
-          </Button>
-          <Button
+          <ConnectButton.Custom>
+            {({ account, chain, openAccountModal, openChainModal, openConnectModal, mounted }) => {
+              const ready = mounted;
+              const connected = ready && !!account && !!chain;
+
+              if (!connected) {
+                return (
+                  <Button
+                    onClick={openConnectModal}
+                    isLoading={isLoading}
+                    variant="primary"
+                    size="lg"
+                    className="text-lg px-12 py-8 rounded-2xl group shadow-[0_0_30px_rgba(16,185,129,0.4)]"
+                  >
+                    Connect Web3 Wallet
+                    <ArrowRight
+                      className="ml-2 group-hover:translate-x-1 transition-transform"
+                      size={20}
+                    />
+                  </Button>
+                );
+              }
+
+              return (
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button
+                    onClick={openChainModal}
+                    variant="outline"
+                    size="lg"
+                    className="text-sm px-6 py-6 rounded-2xl border-white/10 hover:bg-white/5"
+                  >
+                    {chain.name}
+                  </Button>
+                  <Button
+                    onClick={openAccountModal}
+                    variant="primary"
+                    size="lg"
+                    className="text-sm px-6 py-6 rounded-2xl"
+                  >
+                    {account.displayName}
+                  </Button>
+                </div>
+              );
+            }}
+          </ConnectButton.Custom>
+          {/* <Button
             variant="outline"
             size="lg"
             className="text-lg px-12 py-8 rounded-2xl border-white/10 hover:bg-white/5"
           >
             View Docs
-          </Button>
+          </Button> */}
         </motion.div>
 
-        {/* Mock Role Selectors for Testing */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.6, delay: 0.8 }}
-          className="mt-16 pt-8 border-t border-white/5 w-full max-w-2xl"
-        >
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-6">Persona: Test Different States</p>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <button
-              onClick={() => connectWallet("0x8932Cc72386762C92a95c34538C40Ef850D5C921")}
-              className="px-4 py-2 bg-slate-900 border border-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-emerald-500 hover:border-emerald-500/30 transition-all uppercase tracking-widest"
-            >
-              Admin
-            </button>
-            <button
-              onClick={() => connectWallet("0x3565A849c7D2078693246294D0A410D31969B086")}
-              className="px-4 py-2 bg-slate-900 border border-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-blue-500 hover:border-blue-500/30 transition-all uppercase tracking-widest"
-            >
-              Publisher
-            </button>
-            <button
-              onClick={() => connectWallet("0x9A2C18D1F74328F667610AD8A3B12384617B01C5")}
-              className="px-4 py-2 bg-slate-900 border border-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-amber-500 hover:border-amber-500/30 transition-all uppercase tracking-widest"
-            >
-              Device
-            </button>
-            <button
-              onClick={() => connectWallet("0xRandom")}
-              className="px-4 py-2 bg-slate-900 border border-white/5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-rose-500 hover:border-rose-500/30 transition-all uppercase tracking-widest"
-            >
-              Restricted
-            </button>
-          </div>
-        </motion.div>
+        {isConnected && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, delay: 0.8 }}
+            className="mt-16 pt-8 border-t border-white/5 w-full max-w-2xl"
+          >
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-3">
+              Connected Wallet
+            </p>
+            <p className="font-mono text-sm text-emerald-500/90 break-all">{address}</p>
+          </motion.div>
+        )}
       </div>
 
-      {/* Features Section */}
       <div className="container mx-auto px-6 py-24 relative z-10">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {features.map((feature, idx) => (
@@ -147,7 +148,6 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* Bottom Branding */}
       <div className="container mx-auto px-6 py-12 border-t border-white/5 opacity-40">
         <div className="flex flex-wrap justify-center gap-12 md:gap-24 grayscale brightness-200">
           <span className="text-xl font-bold tracking-widest uppercase">Ethereum</span>

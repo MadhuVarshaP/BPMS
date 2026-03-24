@@ -3,7 +3,7 @@ const { requireAuth, requireRole } = require("../middleware/authMiddleware");
 const {
   getAvailablePatches,
   getPatchMetadata,
-  reportInstallationSuccess,
+  reportInstallation,
   downloadPatch
 } = require("../controllers/deviceController");
 
@@ -23,10 +23,16 @@ router.get(
   downloadPatch
 );
 router.post(
+  "/report",
+  requireAuth,
+  requireRole("device"),
+  reportInstallation
+);
+router.post(
   "/report-installation",
   requireAuth,
   requireRole("device"),
-  reportInstallationSuccess
+  reportInstallation
 );
 
 module.exports = router;

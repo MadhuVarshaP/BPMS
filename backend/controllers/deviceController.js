@@ -2,6 +2,7 @@ const axios = require("axios");
 const Patch = require("../models/Patch");
 const InstallationLog = require("../models/InstallationLog");
 const Device = require("../models/Device");
+const { normalizeAddress } = require("../config/blockchain");
 
 async function getAvailablePatches(_req, res, next) {
   try {
@@ -47,15 +48,30 @@ async function getPatchMetadata(req, res, next) {
   }
 }
 
-async function reportInstallationSuccess(req, res, next) {
+async function reportInstallation(req, res, next) {
   try {
-    const { patchId, success } = req.body;
+    const { patchId, success, status, deviceAddress } = req.body;
+    const resolvedStatus =
+      status ||
+      (success === true
+        ? "success"
+        : success === false
+          ? "failure"
+          : null);
+    const normalizedStatus = resolvedStatus
+      ? String(resolvedStatus).toLowerCase()
+      : null;
 
-    if (patchId === undefined || success === undefined) {
+    if (
+      patchId === undefined ||
+      !normalizedStatus ||
+      !["success", "failure"].includes(normalizedStatus)
+    ) {
       return res
         .status(400)
         .json({
-          error: "patchId and success (true/false) are required"
+          error:
+            "patchId and status ('success'|'failure') are required. success (boolean) is also supported."
         });
     }
 
@@ -68,22 +84,21 @@ async function reportInstallationSuccess(req, res, next) {
     }
 
     const log = await InstallationLog.create({
-      deviceAddress: req.auth.walletAddress,
+      deviceAddress: normalizeAddress(deviceAddress || req.auth.walletAddress),
       patchId: Number(patchId),
-      status: success ? "success" : "failure",
+      status: normalizedStatus,
+      source: "api",
       timestamp: new Date()
     });
 
     await Device.findOneAndUpdate(
-      { walletAddress: req.auth.walletAddress },
+      { walletAddress: log.deviceAddress },
       { lastSeen: new Date() }
     );
 
     return res.status(201).json({
-      message:
-        "Installation logged. Device must call reportInstallation() on smart contract.",
-      log,
-      nextStep: `Call contract reportInstallation(${patchId}, ${success}) from device wallet`
+      message: "Installation report synced successfully",
+      log
     });
   } catch (error) {
     return next(error);
@@ -118,6 +133,6 @@ async function downloadPatch(req, res, next) {
 module.exports = {
   getAvailablePatches,
   getPatchMetadata,
-  reportInstallationSuccess,
+  reportInstallation,
   downloadPatch
 };

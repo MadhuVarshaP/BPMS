@@ -1,38 +1,93 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card } from "@/components/Cards";
 import { Badge, Button } from "@/components/UI";
 import { Modal, FormInput } from "@/components/Forms";
-import {
-    Users,
-    Plus,
-    Trash2,
-    Package,
-    CheckCircle2,
-    AlertCircle,
-    History,
-    ShieldCheck,
-    Search,
-    ExternalLink
-} from "lucide-react";
-import { PUBLISHER_LIST, PATCHES, INSTALL_LOGS } from "@/data/mockData";
+import { Plus, AlertCircle, ShieldCheck } from "lucide-react";
+import { useWallet } from "@/context/WalletContext";
+import { useToast } from "@/context/ToastContext";
+import { bpmsContractAbi } from "@/lib/contractAbi";
+import { getContractWithSigner, getFrontendContractAddress } from "@/lib/ethers";
+
+type Publisher = {
+    walletAddress: string;
+    role: "publisher";
+    status: "active" | "revoked";
+    createdAt: string;
+};
 
 export default function AdminPublishers() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [address, setAddress] = useState("");
+    const [publishers, setPublishers] = useState<Publisher[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const { address: adminAddress } = useWallet();
+    const { showToast } = useToast();
 
-    const publishers = PUBLISHER_LIST.map(addr => {
-        const publisherPatches = PATCHES.filter(p => p.publisher === addr);
-        const totalInstalls = publisherPatches.reduce((acc, p) => acc + p.installCount, 0);
-        return {
-            address: addr,
-            activePatches: publisherPatches.length,
-            totalInstallations: totalInstalls,
-            status: "authorized"
-        };
-    });
+    const fetchPublishers = useCallback(async () => {
+        if (!adminAddress) return;
+        setIsLoading(true);
+        try {
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+            const response = await fetch(`${baseUrl}/api/admin/publishers`, {
+                headers: {
+                    "x-wallet-address": adminAddress,
+                },
+                cache: "no-store",
+            });
+            const data = (await response.json()) as { publishers?: Publisher[]; error?: string };
+            if (!response.ok) {
+                throw new Error(data.error || "Failed to fetch publishers");
+            }
+            setPublishers(data.publishers || []);
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : "Failed to fetch publishers", "error");
+        } finally {
+            setIsLoading(false);
+        }
+    }, [adminAddress, showToast]);
+
+    useEffect(() => {
+        void fetchPublishers();
+    }, [fetchPublishers]);
+
+    async function handleAuthorizePublisher() {
+        if (!adminAddress || !address || isSubmitting) return;
+        setIsSubmitting(true);
+        try {
+            const contractAddress = getFrontendContractAddress();
+            const contract = await getContractWithSigner(contractAddress, bpmsContractAbi);
+            const tx = await contract.authorizePublisher(address.trim());
+            await tx.wait();
+
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+            const response = await fetch(`${baseUrl}/api/admin/authorize-publisher`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-wallet-address": adminAddress,
+                },
+                body: JSON.stringify({
+                    walletAddress: address.trim(),
+                }),
+            });
+            const payload = (await response.json()) as { error?: string };
+            if (!response.ok) {
+                throw new Error(payload.error || "Failed to sync authorized publisher");
+            }
+            showToast("Publisher authorized successfully", "success");
+            setAddress("");
+            setIsModalOpen(false);
+            await fetchPublishers();
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : "Authorization failed", "error");
+        } finally {
+            setIsSubmitting(false);
+        }
+    }
 
     return (
         <DashboardLayout>
@@ -43,13 +98,6 @@ export default function AdminPublishers() {
                         <p className="text-slate-400 font-medium">Authorize developers and distribute patches through cryptographical identities.</p>
                     </div>
                     <div className="flex gap-4">
-                        <div className="relative group">
-                            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-emerald-500 transition-colors" />
-                            <input
-                                placeholder="Search publisher address..."
-                                className="bg-slate-900 border border-white/5 rounded-xl px-12 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 w-full md:w-80 transition-all font-mono"
-                            />
-                        </div>
                         <Button onClick={() => setIsModalOpen(true)} className="px-6 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-emerald-500/10">
                             <Plus size={18} />
                             Authorize Publisher
@@ -63,44 +111,42 @@ export default function AdminPublishers() {
                             <thead>
                                 <tr>
                                     <th>Publisher Identity</th>
-                                    <th>Active Patches</th>
-                                    <th>Total Deployments</th>
+                                    <th>Role</th>
                                     <th>Permission Status</th>
-                                    <th className="text-right">Actions</th>
+                                    <th>Added</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {publishers.map((pub, idx) => (
-                                    <tr key={idx} className="group hover:bg-white/[0.01]">
+                                {isLoading ? (
+                                    <tr>
+                                        <td colSpan={4} className="text-slate-400">Loading publishers...</td>
+                                    </tr>
+                                ) : publishers.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={4} className="text-slate-400">No authorized publishers found.</td>
+                                    </tr>
+                                ) : publishers.map((pub) => (
+                                    <tr key={pub.walletAddress} className="group hover:bg-white/1">
                                         <td className="font-mono text-slate-300 text-sm">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-500 group-hover:bg-blue-500/10 group-hover:text-blue-500 transition-all">
                                                     <ShieldCheck size={18} />
                                                 </div>
                                                 <span className="font-semibold tracking-tight">
-                                                    {pub.address.slice(0, 10)}...{pub.address.slice(-8)}
+                                                    {pub.walletAddress.slice(0, 10)}...{pub.walletAddress.slice(-8)}
                                                 </span>
                                             </div>
                                         </td>
-                                        <td className="text-sm font-bold text-slate-300">
-                                            <div className="flex items-center gap-2">
-                                                <Package size={14} className="text-blue-400" />
-                                                {pub.activePatches}
-                                            </div>
-                                        </td>
-                                        <td className="text-sm font-bold text-slate-400">
-                                            {pub.totalInstallations.toLocaleString()} <span className="text-[10px] text-slate-500 ml-1 font-medium uppercase tracking-widest">Active nodes</span>
+                                        <td className="text-sm font-bold text-slate-300 uppercase">
+                                            {pub.role}
                                         </td>
                                         <td>
                                             <Badge variant="success">
-                                                {pub.status}
+                                                {pub.status === "active" ? "authorized" : pub.status}
                                             </Badge>
                                         </td>
-                                        <td className="text-right">
-                                            <Button variant="ghost" size="icon" className="group/btn hover:bg-rose-500/10 transition-all">
-                                                <Trash2 size={18} className="group-hover/btn:text-rose-500" />
-                                                <span className="sr-only">Revoke Access</span>
-                                            </Button>
+                                        <td className="text-xs text-slate-400">
+                                            {new Date(pub.createdAt).toLocaleDateString()}
                                         </td>
                                     </tr>
                                 ))}
@@ -117,7 +163,13 @@ export default function AdminPublishers() {
                     footer={
                         <>
                             <Button onClick={() => setIsModalOpen(false)} variant="ghost" className="rounded-xl px-8">Discard</Button>
-                            <Button onClick={() => setIsModalOpen(false)} className="rounded-xl px-12">Authorize Address</Button>
+                            <Button
+                                onClick={() => void handleAuthorizePublisher()}
+                                isLoading={isSubmitting}
+                                className="rounded-xl px-12"
+                            >
+                                Authorize Address
+                            </Button>
                         </>
                     }
                 >
@@ -132,7 +184,7 @@ export default function AdminPublishers() {
                             onChange={(e) => setAddress(e.target.value)}
                         />
                         <div className="p-4 bg-amber-500/5 border border-amber-500/10 rounded-2xl flex items-start gap-4">
-                            <AlertCircle size={20} className="text-amber-500 mt-1 flex-shrink-0" />
+                            <AlertCircle size={20} className="text-amber-500 mt-1 shrink-0" />
                             <p className="text-xs text-amber-500/80 leading-relaxed font-medium">
                                 Authorizing an address allows it to deploy executable code to all endpoints. Ensure the identity has been verified via hardware-based KYC.
                             </p>

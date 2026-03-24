@@ -1,5 +1,5 @@
 const Patch = require("../models/Patch");
-const { normalizeAddress } = require("../config/blockchain");
+const { getReadOnlyContract, normalizeAddress } = require("../config/blockchain");
 const { uploadBufferToPinata } = require("../services/ipfsService");
 const { sha256Hex, ensureBytes32 } = require("../services/hashService");
 
@@ -35,7 +35,7 @@ async function uploadPatchFile(req, res, next) {
 
 async function publishPatchMetadata(req, res, next) {
   try {
-    const { softwareName, version, ipfsHash, fileHash } = req.body;
+    const { softwareName, version, ipfsHash, fileHash, publisher } = req.body;
 
     if (!softwareName || !version || !ipfsHash || !fileHash) {
       return res.status(400).json({
@@ -45,12 +45,47 @@ async function publishPatchMetadata(req, res, next) {
     }
 
     const bytes32Hash = ensureBytes32(fileHash);
+    const publisherAddress = normalizeAddress(
+      publisher || req.auth.walletAddress
+    );
+    const contract = getReadOnlyContract();
+    const patchId = Number(await contract.patchCounter());
+
+    if (!Number.isFinite(patchId) || patchId <= 0) {
+      return res.status(400).json({
+        error:
+          "No on-chain patch detected. Call publishPatch() on the smart contract first."
+      });
+    }
+
+    const existingPatch = await Patch.findOne({ patchId });
+    if (existingPatch) {
+      return res.status(200).json({
+        message: "Patch already synced to backend",
+        patch: existingPatch
+      });
+    }
+
+    const chainPatch = await contract.patches(patchId);
+    const chainPublisher = normalizeAddress(chainPatch.publisher);
+    if (
+      chainPatch.softwareName !== softwareName ||
+      chainPatch.version !== version ||
+      chainPatch.ipfsHash !== ipfsHash ||
+      String(chainPatch.fileHash).toLowerCase() !== bytes32Hash ||
+      chainPublisher !== publisherAddress
+    ) {
+      return res.status(409).json({
+        error: "On-chain patch metadata does not match request payload",
+        hint: "Call this endpoint immediately after your publishPatch transaction is confirmed."
+      });
+    }
 
     const patch = new Patch({
-      patchId: Date.now(),
+      patchId,
       softwareName,
       version,
-      publisher: req.auth.walletAddress,
+      publisher: publisherAddress,
       ipfsHash,
       fileHash: bytes32Hash,
       active: true,
@@ -60,10 +95,8 @@ async function publishPatchMetadata(req, res, next) {
     await patch.save();
 
     return res.status(201).json({
-      message:
-        "Patch metadata stored. Publisher must call publishPatch() on smart contract with patchId.",
-      patch,
-      nextStep: `Call contract publishPatch("${softwareName}", "${version}", "${ipfsHash}", "${bytes32Hash}") from publisher wallet`
+      message: "Patch metadata synced successfully",
+      patch
     });
   } catch (error) {
     return next(error);

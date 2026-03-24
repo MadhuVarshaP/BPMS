@@ -18,7 +18,6 @@ import {
     ChevronLeft,
     ChevronRight,
     Menu,
-    X,
     Wallet,
     Zap
 } from "lucide-react";
@@ -39,6 +38,7 @@ export const Sidebar = ({ isMobileOpen, setIsMobileOpen }: { isMobileOpen: boole
             case "admin":
                 return [
                     { icon: LayoutDashboard, label: "Dashboard", href: "/admin/dashboard" },
+                    { icon: History, label: "Requests", href: "/admin/requests" },
                     { icon: Cpu, label: "Devices", href: "/admin/devices" },
                     { icon: Users, label: "Publishers", href: "/admin/publishers" },
                     { icon: Package, label: "Patches", href: "/admin/patches" },
@@ -89,7 +89,7 @@ export const Sidebar = ({ isMobileOpen, setIsMobileOpen }: { isMobileOpen: boole
             >
                 {/* Logo Section */}
                 <div className="h-20 flex items-center px-6 border-b border-white/5 overflow-hidden">
-                    <div className="bg-emerald-500 rounded-lg p-1.5 flex-shrink-0">
+                    <div className="bg-emerald-500 rounded-lg p-1.5 shrink-0">
                         <ShieldCheck className="text-white" size={24} />
                     </div>
                     <span className={cn(
@@ -114,7 +114,7 @@ export const Sidebar = ({ isMobileOpen, setIsMobileOpen }: { isMobileOpen: boole
                                     : "hover:bg-slate-800/50 hover:text-white"
                             )}
                         >
-                            <item.icon size={22} className={cn("flex-shrink-0 transition-transform duration-300 group-hover:scale-110", pathname === item.href && "text-emerald-500")} />
+                            <item.icon size={22} className={cn("shrink-0 transition-transform duration-300 group-hover:scale-110", pathname === item.href && "text-emerald-500")} />
                             <span className={cn(
                                 "ml-3 transition-opacity duration-300 whitespace-nowrap overflow-hidden",
                                 isCollapsed && !isMobileOpen && "md:w-0 md:opacity-0"
@@ -141,7 +141,7 @@ export const Sidebar = ({ isMobileOpen, setIsMobileOpen }: { isMobileOpen: boole
                             "flex w-full items-center rounded-xl p-3 text-slate-400 font-medium transition-all group hover:bg-rose-500/10 hover:text-rose-500",
                         )}
                     >
-                        <LogOut size={22} className="flex-shrink-0 group-hover:scale-110" />
+                        <LogOut size={22} className="shrink-0 group-hover:scale-110" />
                         <span className={cn(
                             "ml-3 transition-opacity duration-300 whitespace-nowrap overflow-hidden",
                             isCollapsed && !isMobileOpen && "md:w-0 md:opacity-0"

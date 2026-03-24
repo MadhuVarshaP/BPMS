@@ -1,43 +1,120 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card } from "@/components/Cards";
 import { Badge, Button } from "@/components/UI";
 import { Modal, FormInput } from "@/components/Forms";
 import {
-    Cpu,
-    Search,
     Plus,
-    Trash2,
-    Eye,
-    ExternalLink,
-    Filter,
-    ChevronDown,
     Monitor,
-    Activity,
     History,
-    TrendingUp,
-    XCircle,
     CheckCircle2
 } from "lucide-react";
-import { DEVICES, INSTALL_LOGS, PATCHES } from "@/data/mockData";
+import { useWallet } from "@/context/WalletContext";
+import { useToast } from "@/context/ToastContext";
+import { bpmsContractAbi } from "@/lib/contractAbi";
+import { getContractWithSigner, getFrontendContractAddress } from "@/lib/ethers";
+
+type Device = {
+    walletAddress: string;
+    deviceId: string;
+    deviceType: string;
+    location?: string;
+    status: "registered" | "revoked" | "disabled";
+    lastSeen: string;
+};
 
 export default function AdminDevices() {
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-    const [selectedDevice, setSelectedDevice] = useState<any>(null);
-    const [address, setAddress] = useState("");
+    const [walletAddress, setWalletAddress] = useState("");
+    const [deviceId, setDeviceId] = useState("");
+    const [deviceType, setDeviceType] = useState("other");
+    const [location, setLocation] = useState("");
+    const [devices, setDevices] = useState<Device[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const { address } = useWallet();
+    const { showToast } = useToast();
 
-    const handleOpenDetails = (device: any) => {
-        setSelectedDevice(device);
-        setIsDetailsOpen(true);
-    };
+    const fetchDevices = useCallback(async () => {
+        if (!address) return;
+        setIsLoading(true);
+        try {
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+            const response = await fetch(`${baseUrl}/api/admin/devices`, {
+                headers: {
+                    "x-wallet-address": address,
+                },
+                cache: "no-store",
+            });
+            const data = (await response.json()) as { devices?: Device[]; error?: string };
+            if (!response.ok) {
+                throw new Error(data.error || "Failed to fetch devices");
+            }
+            setDevices(data.devices || []);
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : "Failed to fetch devices", "error");
+        } finally {
+            setIsLoading(false);
+        }
+    }, [address, showToast]);
+
+    useEffect(() => {
+        void fetchDevices();
+    }, [fetchDevices]);
+
+    async function handleRegisterDevice() {
+        if (!address || !walletAddress || !deviceId || isSubmitting) return;
+        setIsSubmitting(true);
+        try {
+            const allowedTypes = new Set(["server", "drone", "radar", "sensor", "other"]);
+            const normalizedType = allowedTypes.has(deviceType.toLowerCase())
+                ? deviceType.toLowerCase()
+                : "other";
+
+            const contractAddress = getFrontendContractAddress();
+            const contract = await getContractWithSigner(contractAddress, bpmsContractAbi);
+            const tx = await contract.registerDevice(walletAddress.trim());
+            await tx.wait();
+
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+            const response = await fetch(`${baseUrl}/api/admin/register-device`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-wallet-address": address,
+                },
+                body: JSON.stringify({
+                    walletAddress: walletAddress.trim(),
+                    deviceId: deviceId.trim(),
+                    deviceType: normalizedType,
+                    location: location.trim() || undefined,
+                }),
+            });
+            const payload = (await response.json()) as { error?: string };
+            if (!response.ok) {
+                throw new Error(payload.error || "Failed to sync registered device");
+            }
+
+            showToast("Device registered successfully", "success");
+            setWalletAddress("");
+            setDeviceId("");
+            setDeviceType("other");
+            setLocation("");
+            setIsModalOpen(false);
+            await fetchDevices();
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : "Device registration failed", "error");
+        } finally {
+            setIsSubmitting(false);
+        }
+    }
 
     const dashboardStats = [
-        { label: "Total Active", value: DEVICES.length, icon: CheckCircle2, color: "text-emerald-500" },
-        { label: "Compliance Low", value: DEVICES.filter(d => d.compliance < 50).length, icon: XCircle, color: "text-rose-500" },
-        { label: "Revoked", value: DEVICES.filter(d => d.status === "revoked").length, icon: History, color: "text-slate-500" },
+        { label: "Total Registered", value: devices.filter(d => d.status === "registered").length, icon: CheckCircle2, color: "text-emerald-500" },
+        { label: "Revoked", value: devices.filter(d => d.status === "revoked").length, icon: History, color: "text-slate-500" },
+        { label: "Total Devices", value: devices.length, icon: Monitor, color: "text-blue-500" },
     ];
 
     return (
@@ -50,13 +127,6 @@ export default function AdminDevices() {
                         <p className="text-slate-400 font-medium">Manage and authorize endpoint hardware in the secure network.</p>
                     </div>
                     <div className="flex gap-4">
-                        <div className="relative group">
-                            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-emerald-500 transition-colors" />
-                            <input
-                                placeholder="Search device address..."
-                                className="bg-slate-900 border border-white/5 rounded-xl px-12 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 w-full md:w-80 transition-all font-mono"
-                            />
-                        </div>
                         <Button onClick={() => setIsModalOpen(true)} className="px-6 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-emerald-500/10">
                             <Plus size={18} />
                             Register Device
@@ -85,64 +155,42 @@ export default function AdminDevices() {
                             <thead>
                                 <tr>
                                     <th>Device Address</th>
+                                    <th>Device ID</th>
+                                    <th>Type</th>
                                     <th>Status</th>
-                                    <th>Last Installation</th>
-                                    <th>Installed Patches</th>
-                                    <th>Compliance %</th>
-                                    <th className="text-right">Actions</th>
+                                    <th>Last Seen</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {DEVICES.map((device, idx) => (
-                                    <tr key={idx} className="group hover:bg-white/[0.01]">
+                                {isLoading ? (
+                                    <tr>
+                                        <td colSpan={5} className="text-slate-400">Loading devices...</td>
+                                    </tr>
+                                ) : devices.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} className="text-slate-400">No devices found.</td>
+                                    </tr>
+                                ) : devices.map((device) => (
+                                    <tr key={device.walletAddress} className="group hover:bg-white/1">
                                         <td className="font-mono text-slate-300 text-sm">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-500 group-hover:bg-emerald-500/10 group-hover:text-emerald-500 transition-all">
                                                     <Monitor size={18} />
                                                 </div>
                                                 <span className="font-semibold tracking-tight">
-                                                    {device.address.slice(0, 10)}...{device.address.slice(-8)}
+                                                    {device.walletAddress.slice(0, 10)}...{device.walletAddress.slice(-8)}
                                                 </span>
                                             </div>
                                         </td>
+                                        <td className="text-sm text-slate-300">{device.deviceId}</td>
+                                        <td className="text-sm text-slate-300 uppercase">{device.deviceType}</td>
                                         <td>
                                             <Badge variant={device.status === "registered" ? "success" : "error"}>
                                                 {device.status}
                                             </Badge>
                                         </td>
                                         <td className="text-sm text-slate-400 font-medium">
-                                            <div className="flex items-center gap-2">
-                                                <Activity size={12} className="text-emerald-500" />
-                                                {device.lastInstallation}
-                                            </div>
-                                        </td>
-                                        <td className="text-sm font-bold text-slate-300">
-                                            <div className="bg-slate-900 w-fit px-3 py-1 rounded-lg border border-white/5">
-                                                {device.installedPatchesCount} <span className="text-xs text-slate-500 ml-1">Patches</span>
-                                            </div>
-                                        </td>
-                                        <td className="text-sm font-bold">
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex-1 max-w-[80px] h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                                                    <div
-                                                        className={`h-full rounded-full ${device.compliance > 80 ? "bg-emerald-500" : device.compliance > 50 ? "bg-amber-500" : "bg-rose-500"}`}
-                                                        style={{ width: `${device.compliance}%` }}
-                                                    />
-                                                </div>
-                                                <span className={device.compliance > 80 ? "text-emerald-500" : device.compliance > 50 ? "text-amber-500" : "text-rose-500"}>
-                                                    {device.compliance}%
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td className="text-right">
-                                            <div className="flex justify-end gap-2">
-                                                <Button onClick={() => handleOpenDetails(device)} variant="ghost" size="icon" className="group/btn hover:bg-emerald-500/10 transition-all">
-                                                    <Eye size={18} className="group-hover/btn:text-emerald-500" />
-                                                </Button>
-                                                <Button variant="ghost" size="icon" className="group/btn hover:bg-rose-500/10 transition-all">
-                                                    <Trash2 size={18} className="group-hover/btn:text-rose-500" />
-                                                </Button>
-                                            </div>
+                                            {new Date(device.lastSeen).toLocaleString()}
                                         </td>
                                     </tr>
                                 ))}
@@ -159,7 +207,13 @@ export default function AdminDevices() {
                     footer={
                         <>
                             <Button onClick={() => setIsModalOpen(false)} variant="ghost" className="rounded-xl px-8">Cancel</Button>
-                            <Button onClick={() => setIsModalOpen(false)} className="rounded-xl px-12">Submit Authorization</Button>
+                            <Button
+                                onClick={() => void handleRegisterDevice()}
+                                isLoading={isSubmitting}
+                                className="rounded-xl px-12"
+                            >
+                                Submit Authorization
+                            </Button>
                         </>
                     }
                 >
@@ -170,8 +224,26 @@ export default function AdminDevices() {
                         <FormInput
                             label="Hardware Wallet Address"
                             placeholder="0x..."
-                            value={address}
-                            onChange={(e) => setAddress(e.target.value)}
+                            value={walletAddress}
+                            onChange={(e) => setWalletAddress(e.target.value)}
+                        />
+                        <FormInput
+                            label="Device ID"
+                            placeholder="server-01"
+                            value={deviceId}
+                            onChange={(e) => setDeviceId(e.target.value)}
+                        />
+                        <FormInput
+                            label="Device Type"
+                            placeholder="server | drone | radar | sensor | other"
+                            value={deviceType}
+                            onChange={(e) => setDeviceType(e.target.value)}
+                        />
+                        <FormInput
+                            label="Location (optional)"
+                            placeholder="Data center - rack A"
+                            value={location}
+                            onChange={(e) => setLocation(e.target.value)}
                         />
                         <div className="p-4 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl flex items-start gap-4">
                             <History size={20} className="text-emerald-500 mt-1" />
@@ -181,58 +253,6 @@ export default function AdminDevices() {
                         </div>
                     </div>
                 </Modal>
-
-                {/* Device Details Modal */}
-                {selectedDevice && (
-                    <Modal
-                        isOpen={isDetailsOpen}
-                        onClose={() => setIsDetailsOpen(false)}
-                        title="Device Intelligence Report"
-                    >
-                        <div className="space-y-8">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="p-4 bg-slate-900 rounded-2xl border border-white/5">
-                                    <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Address Hash</p>
-                                    <p className="text-xs font-mono font-bold mt-1 text-white truncate">{selectedDevice.address}</p>
-                                </div>
-                                <div className="p-4 bg-slate-900 rounded-2xl border border-white/5">
-                                    <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Uptime Status</p>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                                        <p className="text-xs font-bold text-emerald-500">Connected</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="space-y-4">
-                                <h4 className="text-sm font-bold text-white tracking-tight flex items-center gap-2 uppercase">
-                                    <Activity size={16} className="text-emerald-500" />
-                                    Installation Timeline
-                                </h4>
-                                <div className="space-y-3 relative before:absolute before:inset-y-0 before:left-[11px] before:w-px before:bg-white/5">
-                                    {INSTALL_LOGS.filter(l => l.device === selectedDevice.address).map((log, i) => (
-                                        <div key={i} className="flex gap-4 relative">
-                                            <div className={`mt-1.5 w-[22px] h-[22px] rounded-full border-2 border-slate-900 z-10 flex items-center justify-center ${log.status === "success" ? "bg-emerald-500" : "bg-rose-500"}`}>
-                                                {log.status === "success" ? <CheckCircle2 size={10} className="text-white" /> : <XCircle size={10} className="text-white" />}
-                                            </div>
-                                            <div className="flex-1 pb-4">
-                                                <div className="flex justify-between items-center">
-                                                    <p className="text-xs font-bold text-white">PATCH #P00{log.patchId} - {PATCHES.find(p => p.id === log.patchId)?.software}</p>
-                                                    <span className="text-[10px] font-mono text-slate-500">{log.timestamp}</span>
-                                                </div>
-                                                <p className="text-[10px] text-slate-500 font-medium mt-1">Verified via SHA-256 integrity check.</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <Button className="w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl shadow-emerald-500/5">
-                                Trigger Manual Remote Sync
-                            </Button>
-                        </div>
-                    </Modal>
-                )}
             </div>
         </DashboardLayout>
     );
