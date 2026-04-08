@@ -4,8 +4,10 @@ const multer = require("multer");
 const { requireAuth, requireRole } = require("../middleware/authMiddleware");
 const {
   uploadPatchFile,
-  publishPatchMetadata,
-  getPublisherPatches
+  syncPatchFromTx,
+  getPublisherPatches,
+  getPublisherInstallationLogs,
+  getPublisherAnalytics
 } = require("../controllers/publisherController");
 
 const router = express.Router();
@@ -25,10 +27,16 @@ router.post(
   uploadPatchFile
 );
 router.post(
+  "/sync",
+  requireAuth,
+  requireRole("publisher"),
+  syncPatchFromTx
+);
+router.post(
   "/publish",
   requireAuth,
   requireRole("publisher"),
-  publishPatchMetadata
+  syncPatchFromTx
 );
 router.get(
   "/patches",
@@ -36,5 +44,7 @@ router.get(
   requireRole("publisher"),
   getPublisherPatches
 );
+router.get("/logs", requireAuth, requireRole("publisher"), getPublisherInstallationLogs);
+router.get("/analytics", requireAuth, requireRole("publisher"), getPublisherAnalytics);
 
 module.exports = router;

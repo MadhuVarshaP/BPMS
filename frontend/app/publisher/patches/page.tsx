@@ -1,43 +1,50 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card } from "@/components/Cards";
-import { Badge, Button } from "@/components/UI";
+import { Button } from "@/components/UI";
 import { Modal } from "@/components/Forms";
 import {
-    Package,
-    Search,
     PlusCircle,
-    Eye,
-    TrendingUp,
-    Activity,
-    CheckCircle2,
-    XCircle,
-    BarChart3,
-    Users,
-    Cpu,
-    ArrowRight,
-    ExternalLink,
-    Download,
-    ShieldCheck,
-    Zap,
-    Terminal,
-    Monitor
+    Eye
 } from "lucide-react";
-import { PATCHES, INSTALL_LOGS, DEVICES } from "@/data/mockData";
 import { useWallet } from "@/context/WalletContext";
 import Link from "next/link";
+import { apiGet } from "@/lib/api";
+
+type Patch = {
+    _id: string;
+    patchId: number;
+    softwareName: string;
+    version: string;
+    active: boolean;
+    installCount?: number;
+    successRate?: number;
+    ipfsHash: string;
+    fileHash: string;
+    releaseTime: string;
+    publisher: string;
+};
 
 export default function PublisherPatches() {
     const { address } = useWallet();
-    const [selectedPatch, setSelectedPatch] = useState<any>(null);
+    const [selectedPatch, setSelectedPatch] = useState<Patch | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [myPatches, setMyPatches] = useState<Patch[]>([]);
 
-    // Filter patches by current publisher
-    const myPatches = PATCHES.filter(p => p.publisher.toLowerCase() === address?.toLowerCase());
+    useEffect(() => {
+        if (!address) return;
+        let cancelled = false;
+        async function load() {
+            const data = await apiGet("/api/publisher/patches", address);
+            if (!cancelled) setMyPatches(((data as { patches?: Patch[] }).patches || []));
+        }
+        void load();
+        return () => { cancelled = true; };
+    }, [address]);
 
-    const handleOpenDetails = (patch: any) => {
+    const handleOpenDetails = (patch: Patch) => {
         setSelectedPatch(patch);
         setIsModalOpen(true);
     };
@@ -73,14 +80,14 @@ export default function PublisherPatches() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {myPatches.map((patch, idx) => (
-                                    <tr key={idx} className="group hover:bg-white/[0.01]">
+                                {myPatches.map((patch) => (
+                                    <tr key={patch._id} className="group hover:bg-white/[0.01]">
                                         <td className="font-mono text-emerald-500 text-xs font-bold">
-                                            #P00{patch.id}
+                                            #P00{patch.patchId}
                                         </td>
                                         <td>
                                             <div className="flex flex-col">
-                                                <span className="text-sm font-bold text-white tracking-tight">{patch.software}</span>
+                                                <span className="text-sm font-bold text-white tracking-tight">{patch.softwareName}</span>
                                                 <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Build V{patch.version}</span>
                                             </div>
                                         </td>
@@ -94,15 +101,15 @@ export default function PublisherPatches() {
                                         </td>
                                         <td className="text-sm font-bold text-slate-300">
                                             <div className="bg-slate-900 w-fit px-3 py-1 rounded-lg border border-white/5">
-                                                {patch.installCount} <span className="text-xs text-slate-500 ml-1">Nodes</span>
+                                                {patch.installCount || 0} <span className="text-xs text-slate-500 ml-1">Nodes</span>
                                             </div>
                                         </td>
                                         <td className="text-sm font-bold">
                                             <div className="flex items-center gap-3">
                                                 <div className="flex-1 max-w-[80px] h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-emerald-500" style={{ width: `${patch.successRate}%` }} />
+                                                    <div className="h-full bg-emerald-500" style={{ width: `${patch.successRate || 0}%` }} />
                                                 </div>
-                                                <span className="text-emerald-500">{patch.successRate}%</span>
+                                                <span className="text-emerald-500">{Math.round(patch.successRate || 0)}%</span>
                                             </div>
                                         </td>
                                         <td className="text-right">
@@ -125,61 +132,12 @@ export default function PublisherPatches() {
                         title="Artifact Distribution Intelligence"
                     >
                         <div className="space-y-8">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="p-4 bg-slate-900 rounded-2xl border border-white/5">
-                                    <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Release Date</p>
-                                    <p className="text-xs font-bold mt-1 text-white">{selectedPatch.releaseDate}</p>
-                                </div>
-                                <div className="p-4 bg-slate-900 rounded-2xl border border-white/5">
-                                    <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Storage Capacity</p>
-                                    <p className="text-xs font-bold mt-1 text-blue-500">2.4 MB on IPFS</p>
-                                </div>
-                            </div>
-
-                            <div className="space-y-4">
-                                <h4 className="text-sm font-bold text-white tracking-tight flex items-center gap-2 uppercase font-inter">
-                                    <TrendingUp size={16} className="text-emerald-500" />
-                                    Deployment Breakdown
-                                </h4>
-                                <div className="grid grid-cols-3 gap-4">
-                                    <div className="p-4 glass rounded-2xl border border-white/5 text-center">
-                                        <p className="text-[10px] uppercase font-bold text-slate-500">Success</p>
-                                        <p className="text-xl font-bold text-emerald-500 mt-1">{selectedPatch.successRate}%</p>
-                                    </div>
-                                    <div className="p-4 glass rounded-2xl border border-white/5 text-center">
-                                        <p className="text-[10px] uppercase font-bold text-slate-500">Failures</p>
-                                        <p className="text-xl font-bold text-rose-500 mt-1">{100 - selectedPatch.successRate}%</p>
-                                    </div>
-                                    <div className="p-4 glass rounded-2xl border border-white/5 text-center">
-                                        <p className="text-[10px] uppercase font-bold text-slate-500">Waitlist</p>
-                                        <p className="text-xl font-bold text-blue-500 mt-1">42</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="space-y-4 pt-4 border-t border-white/5">
-                                <h4 className="text-sm font-bold text-white tracking-tight flex items-center gap-2 uppercase font-inter">
-                                    <Users size={16} className="text-slate-400" />
-                                    Targeted Nodes
-                                </h4>
-                                <div className="space-y-2">
-                                    {INSTALL_LOGS.filter(l => l.patchId === selectedPatch.id).slice(0, 4).map((log, i) => (
-                                        <div key={i} className="flex justify-between items-center p-3 bg-slate-900 rounded-xl border border-white/5">
-                                            <div className="flex items-center gap-3">
-                                                <Monitor size={14} className="text-slate-500" />
-                                                <span className="text-xs font-mono text-slate-300">{log.device.slice(0, 10)}...{log.device.slice(-8)}</span>
-                                            </div>
-                                            <Badge variant={log.status === "success" ? "success" : "error"} className="px-1.5 py-0 text-[8px]">
-                                                {log.status === "success" ? "CONFIRMED" : "FAILED"}
-                                            </Badge>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="flex gap-4">
-                                <Button variant="outline" className="flex-1 rounded-xl">View Protocol Docs</Button>
-                                <Button variant="danger" className="flex-1 rounded-xl">Revoke Build Hash</Button>
+                            <div className="space-y-3">
+                                <p className="text-xs text-slate-400">Release Time: {new Date(selectedPatch.releaseTime).toLocaleString()}</p>
+                                <p className="text-xs text-slate-400">Install Count: {selectedPatch.installCount || 0}</p>
+                                <p className="text-xs text-slate-400">Success Rate: {Math.round(selectedPatch.successRate || 0)}%</p>
+                                <p className="text-xs text-slate-400 break-all">IPFS: {selectedPatch.ipfsHash}</p>
+                                <p className="text-xs text-slate-400 break-all">File Hash: {selectedPatch.fileHash}</p>
                             </div>
                         </div>
                     </Modal>

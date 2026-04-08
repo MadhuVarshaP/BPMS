@@ -40,19 +40,31 @@ async function fetchPatchMetadata(patchId) {
   return response.data;
 }
 
+async function fetchPatchChainIntegrity(patchId) {
+  const response = await axios.get(
+    `${API_BASE}/api/device/patch/${patchId}/chain-integrity`,
+    {
+      headers: authHeaders()
+    }
+  );
+  return response.data;
+}
+
 async function downloadPatchBuffer(ipfsHash) {
   const url = `${IPFS_GATEWAY}/${ipfsHash}`;
   const response = await axios.get(url, { responseType: "arraybuffer" });
   return Buffer.from(response.data);
 }
 
-async function reportInstallation(patchId, success) {
+async function reportInstallation(patchId, success, txMeta = {}) {
   await axios.post(
     `${API_BASE}/api/device/report`,
     {
       deviceAddress: WALLET_ADDRESS,
       patchId,
-      status: success ? "success" : "failure"
+      status: success ? "success" : "failure",
+      txHash: txMeta.txHash,
+      logIndex: txMeta.logIndex
     },
     {
       headers: authHeaders()
@@ -60,9 +72,33 @@ async function reportInstallation(patchId, success) {
   );
 }
 
+function findPatchInstalledLogIndex(contract, receipt, contractAddress) {
+  const addr = String(contractAddress || "").toLowerCase();
+  if (!receipt?.logs) return undefined;
+  for (const log of receipt.logs) {
+    if (String(log.address || "").toLowerCase() !== addr) continue;
+    try {
+      const parsed = contract.interface.parseLog({
+        topics: log.topics,
+        data: log.data
+      });
+      if (parsed?.name === "PatchInstalled") {
+        return Number(log.index);
+      }
+    } catch (_) {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 async function reportInstallationOnChain(contract, patchId, success) {
   const tx = await contract.reportInstallation(patchId, success);
-  await tx.wait();
+  const receipt = await tx.wait();
+  return {
+    txHash: String(tx.hash).toLowerCase(),
+    logIndex: findPatchInstalledLogIndex(contract, receipt, CONTRACT_ADDRESS)
+  };
 }
 
 async function run() {
@@ -101,6 +137,7 @@ async function run() {
       console.log(`\nProcessing patch ${patch.patchId}...`);
 
       const metadata = await fetchPatchMetadata(patch.patchId);
+      const chainIntegrity = await fetchPatchChainIntegrity(patch.patchId);
       console.log(
         `Downloaded metadata: ${patch.softwareName} v${patch.version}`
       );
@@ -108,29 +145,31 @@ async function run() {
       const patchBuffer = await downloadPatchBuffer(metadata.ipfsHash);
       const calculatedHash = sha256Hex(patchBuffer).toLowerCase();
 
-      console.log(`Expected hash:   ${metadata.expectedFileHash.toLowerCase()}`);
+      console.log(`Expected hash:   ${String(chainIntegrity.fileHash).toLowerCase()}`);
       console.log(`Calculated hash: ${calculatedHash}`);
 
       const isValid =
-        calculatedHash === metadata.expectedFileHash.toLowerCase();
+        calculatedHash === String(chainIntegrity.fileHash).toLowerCase();
 
       if (!isValid) {
         console.log(`❌ Patch ${patch.patchId} rejected: hash mismatch`);
-        await reportInstallationOnChain(contract, patch.patchId, false);
-        await reportInstallation(patch.patchId, false);
+        const txMeta = await reportInstallationOnChain(contract, patch.patchId, false);
+        await reportInstallation(patch.patchId, false, txMeta);
         continue;
       }
 
       await new Promise((resolve) => setTimeout(resolve, 1000));
       console.log(`✅ Patch ${patch.patchId} installed successfully`);
-      await reportInstallationOnChain(contract, patch.patchId, true);
-      await reportInstallation(patch.patchId, true);
+      const txMeta = await reportInstallationOnChain(contract, patch.patchId, true);
+      await reportInstallation(patch.patchId, true, txMeta);
     } catch (error) {
       console.error(
         `❌ Patch ${patch.patchId} failed: ${error.message}`
       );
-      await reportInstallationOnChain(contract, patch.patchId, false).catch(() => {});
-      await reportInstallation(patch.patchId, false).catch(() => {});
+      const txMeta = await reportInstallationOnChain(contract, patch.patchId, false).catch(
+        () => ({})
+      );
+      await reportInstallation(patch.patchId, false, txMeta).catch(() => {});
     }
   }
 }

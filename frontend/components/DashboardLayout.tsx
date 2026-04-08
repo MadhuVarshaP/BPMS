@@ -3,12 +3,13 @@
 import React, { useState } from "react";
 import { Sidebar, Navbar } from "./Layout";
 import { useWallet } from "@/context/WalletContext";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 export const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
     const [isMobileOpen, setIsMobileOpen] = useState(false);
-    const { address, isLoading } = useWallet();
+    const { address, role, isLoading } = useWallet();
     const router = useRouter();
+    const pathname = usePathname();
 
     // Basic client-side auth guard (mock)
     React.useEffect(() => {
@@ -16,6 +17,28 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
             router.push("/");
         }
     }, [address, isLoading, router]);
+
+    React.useEffect(() => {
+        if (isLoading || !address || !role || role === "unauthorized") return;
+
+        const inAdminRoute = pathname.startsWith("/admin");
+        const inPublisherRoute = pathname.startsWith("/publisher");
+        const inDeviceRoute = pathname.startsWith("/device");
+
+        if (inAdminRoute && role !== "admin") {
+            if (role === "publisher") router.push("/publisher/dashboard");
+            else if (role === "device") router.push("/device/dashboard");
+            else router.push("/unauthorized");
+        } else if (inPublisherRoute && role !== "publisher") {
+            if (role === "admin") router.push("/admin/dashboard");
+            else if (role === "device") router.push("/device/dashboard");
+            else router.push("/unauthorized");
+        } else if (inDeviceRoute && role !== "device") {
+            if (role === "admin") router.push("/admin/dashboard");
+            else if (role === "publisher") router.push("/publisher/dashboard");
+            else router.push("/unauthorized");
+        }
+    }, [address, isLoading, pathname, role, router]);
 
     if (isLoading) {
         return (

@@ -1,7 +1,14 @@
 const Patch = require("../models/Patch");
-const { getReadOnlyContract, normalizeAddress } = require("../config/blockchain");
+const InstallationLog = require("../models/InstallationLog");
+const {
+  getReadOnlyContract,
+  getProvider,
+  getContractAbi,
+  normalizeAddress
+} = require("../config/blockchain");
 const { uploadBufferToPinata } = require("../services/ipfsService");
-const { sha256Hex, ensureBytes32 } = require("../services/hashService");
+const { sha256Hex } = require("../services/hashService");
+const { ethers } = require("ethers");
 
 async function uploadPatchFile(req, res, next) {
   try {
@@ -24,37 +31,66 @@ async function uploadPatchFile(req, res, next) {
       ipfsHash: cid,
       fileHash,
       size,
-      timestamp,
-      nextStep:
-        "Use ipfsHash and fileHash to call publishPatch() from publisher wallet on smart contract"
+      timestamp
     });
   } catch (error) {
     return next(error);
   }
 }
 
-async function publishPatchMetadata(req, res, next) {
+/**
+ * Primary sync endpoint.
+ * Frontend sends { txHash, targetPlatform } after on-chain publishPatch is confirmed.
+ * Backend reads the receipt + chain state directly — no mismatch possible.
+ */
+async function syncPatchFromTx(req, res, next) {
   try {
-    const { softwareName, version, ipfsHash, fileHash, publisher } = req.body;
+    const { txHash, targetPlatform } = req.body;
 
-    if (!softwareName || !version || !ipfsHash || !fileHash) {
-      return res.status(400).json({
-        error:
-          "softwareName, version, ipfsHash, and fileHash are required"
+    if (!txHash) {
+      return res.status(400).json({ error: "txHash is required" });
+    }
+
+    const provider = getProvider();
+    const contract = getReadOnlyContract();
+
+    const receipt = await provider.getTransactionReceipt(txHash);
+    if (!receipt) {
+      return res.status(404).json({
+        error: "Transaction receipt not found. It may not be confirmed yet — wait and retry."
       });
     }
 
-    const bytes32Hash = ensureBytes32(fileHash);
-    const publisherAddress = normalizeAddress(
-      publisher || req.auth.walletAddress
-    );
-    const contract = getReadOnlyContract();
-    const patchId = Number(await contract.patchCounter());
-
-    if (!Number.isFinite(patchId) || patchId <= 0) {
+    if (receipt.status !== 1) {
       return res.status(400).json({
-        error:
-          "No on-chain patch detected. Call publishPatch() on the smart contract first."
+        error: "Transaction reverted on-chain. Patch was not published."
+      });
+    }
+
+    const iface = new ethers.Interface(getContractAbi());
+    let patchId = null;
+
+    for (const log of receipt.logs) {
+      try {
+        const parsed = iface.parseLog({
+          topics: log.topics,
+          data: log.data
+        });
+        if (parsed && parsed.name === "PatchPublished") {
+          const raw = parsed.args[0];
+          patchId = typeof raw === "bigint" ? Number(raw) : Number(raw);
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (!patchId || !Number.isFinite(patchId) || patchId <= 0) {
+      return res.status(400).json({
+        error: "PatchPublished event not found in transaction logs. Are you sure this is a publishPatch transaction?",
+        txHash,
+        logsCount: receipt.logs.length
       });
     }
 
@@ -67,35 +103,31 @@ async function publishPatchMetadata(req, res, next) {
     }
 
     const chainPatch = await contract.patches(patchId);
-    const chainPublisher = normalizeAddress(chainPatch.publisher);
-    if (
-      chainPatch.softwareName !== softwareName ||
-      chainPatch.version !== version ||
-      chainPatch.ipfsHash !== ipfsHash ||
-      String(chainPatch.fileHash).toLowerCase() !== bytes32Hash ||
-      chainPublisher !== publisherAddress
-    ) {
-      return res.status(409).json({
-        error: "On-chain patch metadata does not match request payload",
-        hint: "Call this endpoint immediately after your publishPatch transaction is confirmed."
+    const chainPatchId = Number(chainPatch.id);
+    if (!Number.isFinite(chainPatchId) || chainPatchId <= 0) {
+      return res.status(400).json({
+        error: "On-chain patch struct is empty for this patchId. RPC may be lagging — retry in a few seconds.",
+        patchId
       });
     }
 
     const patch = new Patch({
       patchId,
-      softwareName,
-      version,
-      publisher: publisherAddress,
-      ipfsHash,
-      fileHash: bytes32Hash,
-      active: true,
-      releaseTime: new Date()
+      namespace: chainPatch.softwareName,
+      softwareName: chainPatch.softwareName,
+      version: chainPatch.version,
+      targetPlatform: targetPlatform ? String(targetPlatform).trim() : "",
+      publisher: normalizeAddress(chainPatch.publisher),
+      ipfsHash: chainPatch.ipfsHash,
+      fileHash: String(chainPatch.fileHash).toLowerCase(),
+      active: Boolean(chainPatch.active),
+      releaseTime: new Date(Number(chainPatch.releaseTime) * 1000)
     });
 
     await patch.save();
 
     return res.status(201).json({
-      message: "Patch metadata synced successfully",
+      message: "Patch synced from chain successfully",
       patch
     });
   } catch (error) {
@@ -115,8 +147,67 @@ async function getPublisherPatches(req, res, next) {
   }
 }
 
+async function getPublisherInstallationLogs(req, res, next) {
+  try {
+    const patches = await Patch.find({
+      publisher: req.auth.walletAddress
+    }).select("patchId");
+    const patchIds = patches.map((patch) => patch.patchId);
+
+    if (patchIds.length === 0) {
+      return res.json({ count: 0, logs: [] });
+    }
+
+    const logs = await InstallationLog.find({ patchId: { $in: patchIds } })
+      .sort({ timestamp: -1 })
+      .limit(300);
+
+    return res.json({ count: logs.length, logs });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function getPublisherAnalytics(req, res, next) {
+  try {
+    const patches = await Patch.find({
+      publisher: req.auth.walletAddress
+    }).sort({ releaseTime: -1 });
+    const patchIds = patches.map((patch) => patch.patchId);
+
+    const logs =
+      patchIds.length === 0
+        ? []
+        : await InstallationLog.find({ patchId: { $in: patchIds } });
+
+    let successLogs = 0;
+    for (const log of logs) {
+      if (log.status === "success") {
+        successLogs += 1;
+      }
+    }
+
+    const totalLogs = logs.length;
+    const successRate =
+      totalLogs === 0 ? 0 : Number(((successLogs / totalLogs) * 100).toFixed(2));
+
+    return res.json({
+      totalPatches: patches.length,
+      activePatches: patches.filter((patch) => patch.active).length,
+      totalLogs,
+      successLogs,
+      failureLogs: totalLogs - successLogs,
+      successRate
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   uploadPatchFile,
-  publishPatchMetadata,
-  getPublisherPatches
+  syncPatchFromTx,
+  getPublisherPatches,
+  getPublisherInstallationLogs,
+  getPublisherAnalytics
 };

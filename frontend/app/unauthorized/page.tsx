@@ -12,12 +12,12 @@ export default function UnauthorizedPage() {
     const { showToast } = useToast();
     const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-    async function requestPublisherAccess() {
+    async function requestAccess(role: "publisher" | "device") {
         if (!address || isSubmitting) return;
         setIsSubmitting(true);
         try {
             const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-            const response = await fetch(`${baseUrl}/api/request/publisher`, {
+            const response = await fetch(`${baseUrl}/api/request/${role}`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -54,16 +54,24 @@ export default function UnauthorizedPage() {
 
                 <h1 className="text-3xl font-bold text-white mb-4 tracking-tight">Access Restricted</h1>
                 <p className="text-slate-400 mb-8 leading-relaxed">
-                    The wallet address <span className="text-rose-400 font-mono text-sm break-all">{address}</span> is not registered in the BPMS network. You can request publisher access and wait for admin approval.
+                    The wallet address <span className="text-rose-400 font-mono text-sm break-all">{address}</span> is not registered in the BPMS network. Request publisher or device access and wait for admin approval.
                 </p>
 
                 <div className="space-y-4">
                     <Button
-                        onClick={requestPublisherAccess}
+                        onClick={() => void requestAccess("publisher")}
                         isLoading={isSubmitting}
                         className="w-full py-6 rounded-2xl text-base"
                     >
                         Request Publisher Access
+                    </Button>
+                    <Button
+                        onClick={() => void requestAccess("device")}
+                        isLoading={isSubmitting}
+                        variant="outline"
+                        className="w-full py-6 rounded-2xl text-base"
+                    >
+                        Request Device Access
                     </Button>
                     <Button
                         onClick={disconnectWallet}
@@ -73,7 +81,7 @@ export default function UnauthorizedPage() {
                         <LogOut className="mr-2 group-hover:-translate-x-1 transition-transform" size={18} />
                         Disconnect Wallet
                     </Button>
-                    <p className="text-xs text-slate-500 font-medium">Access is granted by admin; role selection is not allowed</p>
+                    <p className="text-xs text-slate-500 font-medium">Access is granted by admin after on-chain role authorization</p>
                 </div>
             </motion.div>
         </div>

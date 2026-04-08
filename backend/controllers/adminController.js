@@ -4,10 +4,15 @@ const Device = require("../models/Device");
 const AccessRequest = require("../models/AccessRequest");
 const InstallationLog = require("../models/InstallationLog");
 const Patch = require("../models/Patch");
+const { syncAllPatchesFromChain } = require("../services/chainSyncService");
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function registerDevice(req, res, next) {
   try {
-    const { walletAddress, deviceId, deviceType, location } = req.body;
+    const { walletAddress, deviceId, deviceType, location, requestId } = req.body;
 
     if (!walletAddress || !deviceId) {
       return res
@@ -17,11 +22,18 @@ async function registerDevice(req, res, next) {
 
     const normalized = normalizeAddress(walletAddress);
     const contract = getReadOnlyContract();
-    const isRegisteredOnChain = await contract.registeredDevices(normalized);
+    let isRegisteredOnChain = false;
+    for (let attempt = 1; attempt <= 20; attempt++) {
+      isRegisteredOnChain = await contract.registeredDevices(normalized);
+      if (isRegisteredOnChain) break;
+      if (attempt < 20) {
+        await sleep(1200);
+      }
+    }
     if (!isRegisteredOnChain) {
       return res.status(400).json({
         error:
-          "Device not registered on-chain yet. Call registerDevice() from admin wallet first."
+          "Device not registered on-chain yet. If the wallet tx just succeeded, wait a few seconds and retry. Also verify frontend and backend point to the same contract/network."
       });
     }
 
@@ -35,7 +47,7 @@ async function registerDevice(req, res, next) {
       { walletAddress: normalized },
       {
         walletAddress: normalized,
-        deviceId,
+        deviceId: String(deviceId).trim(),
         deviceType,
         location,
         status: "registered",
@@ -44,9 +56,172 @@ async function registerDevice(req, res, next) {
       { upsert: true, new: true }
     );
 
+    if (requestId) {
+      await AccessRequest.findByIdAndUpdate(requestId, {
+        status: "approved",
+        reviewedBy: req.auth.walletAddress,
+        reviewedAt: new Date()
+      });
+    } else {
+      await AccessRequest.updateMany(
+        {
+          walletAddress: normalized,
+          requestedRole: "device",
+          status: "pending"
+        },
+        {
+          status: "approved",
+          reviewedBy: req.auth.walletAddress,
+          reviewedAt: new Date()
+        }
+      );
+    }
+
     return res.status(201).json({
       message: "Device registration synced successfully",
       device
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function revokeDevice(req, res, next) {
+  try {
+    const { walletAddress } = req.body;
+
+    if (!walletAddress) {
+      return res.status(400).json({ error: "walletAddress is required" });
+    }
+
+    const normalized = normalizeAddress(walletAddress);
+    const contract = getReadOnlyContract();
+    let stillRegistered = true;
+    // Give RPC/indexer a short window to reflect the just-mined revoke tx.
+    for (let attempt = 1; attempt <= 20; attempt++) {
+      stillRegistered = await contract.registeredDevices(normalized);
+      if (!stillRegistered) break;
+      if (attempt < 20) {
+        await sleep(1200);
+      }
+    }
+    if (stillRegistered) {
+      return res.status(400).json({
+        error:
+          "Device is still registered on-chain. Call revokeDevice() from the admin wallet first, then sync again."
+      });
+    }
+
+    const [device, user] = await Promise.all([
+      Device.findOneAndUpdate(
+        { walletAddress: normalized },
+        { status: "revoked", lastSeen: new Date() },
+        { new: true }
+      ),
+      User.findOneAndUpdate(
+        { walletAddress: normalized, role: "device" },
+        { status: "revoked" },
+        { new: true }
+      )
+    ]);
+
+    if (!device && !user) {
+      return res.status(404).json({
+        error: "No synced device found for this wallet address"
+      });
+    }
+
+    return res.json({
+      message: "Device revocation synced successfully",
+      walletAddress: normalized
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function revokePublisher(req, res, next) {
+  try {
+    const { walletAddress } = req.body;
+
+    if (!walletAddress) {
+      return res.status(400).json({ error: "walletAddress is required" });
+    }
+
+    const normalized = normalizeAddress(walletAddress);
+    const contract = getReadOnlyContract();
+    const stillAuthorized = await contract.authorizedPublishers(normalized);
+    if (stillAuthorized) {
+      return res.status(400).json({
+        error:
+          "Publisher is still authorized on-chain. Call revokePublisher() from the admin wallet first, then sync again."
+      });
+    }
+
+    const updated = await User.findOneAndUpdate(
+      { walletAddress: normalized, role: "publisher" },
+      { status: "revoked" },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({
+        error: "No active publisher user found for this wallet address"
+      });
+    }
+
+    return res.json({
+      message: "Publisher revocation synced successfully",
+      walletAddress: normalized
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function disablePatch(req, res, next) {
+  try {
+    const patchId = Number(req.body?.patchId);
+    if (!Number.isFinite(patchId) || patchId <= 0) {
+      return res.status(400).json({ error: "Valid patchId is required" });
+    }
+
+    const contract = getReadOnlyContract();
+    const chainPatch = await contract.patches(patchId);
+    const chainPatchId = Number(chainPatch.id);
+    if (!chainPatchId || chainPatchId <= 0) {
+      return res.status(404).json({ error: "Patch not found on-chain" });
+    }
+    if (Boolean(chainPatch.active)) {
+      return res.status(400).json({
+        error:
+          "Patch is still active on-chain. Call disablePatch() from the admin wallet first, then sync again."
+      });
+    }
+
+    const patch = await Patch.findOneAndUpdate(
+      { patchId: chainPatchId },
+      {
+        $set: {
+          namespace: chainPatch.softwareName,
+          softwareName: chainPatch.softwareName,
+          version: chainPatch.version,
+          publisher: normalizeAddress(chainPatch.publisher),
+          ipfsHash: chainPatch.ipfsHash,
+          fileHash: String(chainPatch.fileHash).toLowerCase(),
+          active: false,
+          releaseTime: new Date(Number(chainPatch.releaseTime) * 1000)
+        },
+        $setOnInsert: {
+          targetPlatform: ""
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    return res.json({
+      message: "Patch disable synced successfully",
+      patch
     });
   } catch (error) {
     return next(error);
@@ -63,11 +238,19 @@ async function authorizePublisher(req, res, next) {
 
     const normalized = normalizeAddress(walletAddress);
     const contract = getReadOnlyContract();
-    const isAuthorizedOnChain = await contract.authorizedPublishers(normalized);
+    let isAuthorizedOnChain = false;
+    // Give RPC/indexer a short window to reflect the just-mined tx.
+    for (let attempt = 1; attempt <= 20; attempt++) {
+      isAuthorizedOnChain = await contract.authorizedPublishers(normalized);
+      if (isAuthorizedOnChain) break;
+      if (attempt < 20) {
+        await sleep(1200);
+      }
+    }
     if (!isAuthorizedOnChain) {
       return res.status(400).json({
         error:
-          "Publisher not authorized on-chain yet. Call authorizePublisher() from admin wallet first."
+          "Publisher not authorized on-chain yet. If the wallet tx just succeeded, wait a few seconds and retry. Also verify frontend and backend point to the same contract/network."
       });
     }
 
@@ -121,13 +304,16 @@ async function getPublishers(_req, res, next) {
 
 async function getPublisherRequests(req, res, next) {
   try {
-    const status = String(req.query.status || "pending").toLowerCase();
-    const filter = {
-      requestedRole: "publisher"
-    };
+    const statusParam = req.query.status != null ? String(req.query.status).toLowerCase() : "all";
+    const roleParam = req.query.role != null ? String(req.query.role).toLowerCase() : "publisher";
+    const filter = {};
 
-    if (["pending", "approved", "rejected"].includes(status)) {
-      filter.status = status;
+    if (["publisher", "device"].includes(roleParam)) {
+      filter.requestedRole = roleParam;
+    }
+
+    if (["pending", "approved", "rejected"].includes(statusParam)) {
+      filter.status = statusParam;
     }
 
     const requests = await AccessRequest.find(filter).sort({ createdAt: -1 });
@@ -167,6 +353,47 @@ async function getAllDevices(req, res, next) {
   try {
     const devices = await Device.find({}).sort({ createdAt: -1 });
     return res.json({ count: devices.length, devices });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function getAllPatches(_req, res, next) {
+  try {
+    const patches = await Patch.find({}).sort({ releaseTime: -1 });
+    const patchIds = patches.map((patch) => patch.patchId);
+    const logs = await InstallationLog.find({ patchId: { $in: patchIds } });
+
+    const statsByPatch = new Map();
+    for (const log of logs) {
+      const current = statsByPatch.get(log.patchId) || {
+        installCount: 0,
+        successCount: 0
+      };
+      current.installCount += 1;
+      if (log.status === "success") {
+        current.successCount += 1;
+      }
+      statsByPatch.set(log.patchId, current);
+    }
+
+    const enriched = patches.map((patch) => {
+      const stat = statsByPatch.get(patch.patchId) || {
+        installCount: 0,
+        successCount: 0
+      };
+      const successRate =
+        stat.installCount === 0
+          ? 0
+          : Number(((stat.successCount / stat.installCount) * 100).toFixed(2));
+      return {
+        ...patch.toObject(),
+        installCount: stat.installCount,
+        successRate
+      };
+    });
+
+    return res.json({ count: enriched.length, patches: enriched });
   } catch (error) {
     return next(error);
   }
@@ -227,13 +454,30 @@ async function getDashboardMetrics(_req, res, next) {
   }
 }
 
+async function triggerChainSync(_req, res, next) {
+  try {
+    const result = await syncAllPatchesFromChain();
+    return res.json({
+      message: "Chain sync completed",
+      ...result
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   registerDevice,
+  revokeDevice,
+  revokePublisher,
+  disablePatch,
   authorizePublisher,
   getPublishers,
   getAllDevices,
+  getAllPatches,
   getPublisherRequests,
   rejectPublisherRequest,
   getInstallationLogs,
-  getDashboardMetrics
+  getDashboardMetrics,
+  triggerChainSync
 };

@@ -1,44 +1,56 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card } from "@/components/Cards";
-import { Badge, Button } from "@/components/UI";
+import { Button } from "@/components/UI";
 import {
     Zap,
-    History,
-    RefreshCw,
-    ShieldCheck,
-    Terminal,
-    Cpu,
-    Activity,
     CheckCircle2,
     XCircle,
-    Clock,
-    ExternalLink,
-    Lock,
     Loader2,
     Database
 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
-import { INSTALL_LOGS, PATCHES } from "@/data/mockData";
+import { apiGet } from "@/lib/api";
+
+type Log = {
+    _id: string;
+    patchId: number;
+    status: "success" | "failure";
+    timestamp: string;
+};
 
 export default function DeviceSync() {
     const { address } = useWallet();
     const [isSyncing, setIsSyncing] = useState(false);
-    const myLogs = INSTALL_LOGS.filter(l => l.device.toLowerCase() === address?.toLowerCase());
+    const [myLogs, setMyLogs] = useState<Log[]>([]);
 
     const handleSync = () => {
         setIsSyncing(true);
         setTimeout(() => setIsSyncing(false), 3000);
     };
 
+    useEffect(() => {
+        if (!address) return;
+        let cancelled = false;
+        async function load() {
+            const data = await apiGet("/api/device/logs", address);
+            if (!cancelled) setMyLogs(((data as { logs?: Log[] }).logs || []).slice(0, 10));
+        }
+        void load();
+        return () => { cancelled = true; };
+    }, [address, isSyncing]);
+
     return (
         <DashboardLayout>
             <div className="flex flex-col gap-8">
                 <div className="flex flex-col gap-2">
                     <h1 className="text-4xl font-black text-white leading-tight tracking-tight tracking-tighter">Synchronization Protocol</h1>
-                    <p className="text-slate-400 font-medium font-inter">Monitor live heartbeat and pull latest certified builds from the registry.</p>
+                    <p className="text-slate-400 font-medium font-inter">
+                        For the full agent flow (check → IPFS → SHA-256 vs chain → install → report), use the{" "}
+                        <span className="text-emerald-400">Device dashboard</span>. This page shows a live activity timeline.
+                    </p>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
@@ -101,15 +113,15 @@ export default function DeviceSync() {
                                     </div>
                                 ) : (
                                     <div className="space-y-6">
-                                        {myLogs.slice(0, 4).map((log, i) => (
-                                            <div key={i} className="flex gap-6 relative group">
+                                        {myLogs.slice(0, 4).map((log) => (
+                                            <div key={log._id} className="flex gap-6 relative group">
                                                 <div className={`w-6 h-6 rounded-full border-2 border-slate-900 flex items-center justify-center z-10 ${log.status === "success" ? "bg-emerald-500" : "bg-rose-500"}`}>
                                                     {log.status === "success" ? <CheckCircle2 size={12} className="text-white" /> : <XCircle size={12} className="text-white" />}
                                                 </div>
                                                 <div className="flex-1 group-hover:pl-2 transition-all">
                                                     <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest">
                                                         <span className="text-white tracking-tight">Patch #P00{log.patchId} Sync</span>
-                                                        <span className="text-[10px] text-slate-600 font-mono">{log.timestamp}</span>
+                                                        <span className="text-[10px] text-slate-600 font-mono">{new Date(log.timestamp).toLocaleString()}</span>
                                                     </div>
                                                     <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Status: {log.status.toUpperCase()}</p>
                                                 </div>

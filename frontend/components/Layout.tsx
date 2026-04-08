@@ -55,8 +55,8 @@ export const Sidebar = ({ isMobileOpen, setIsMobileOpen }: { isMobileOpen: boole
             case "device":
                 return [
                     { icon: LayoutDashboard, label: "Dashboard", href: "/device/dashboard" },
-                    { icon: Package, label: "Installed Patches", href: "/device/patches" },
-                    { icon: Zap, label: "Sync Status", href: "/device/sync" },
+                    { icon: Package, label: "Registry patches", href: "/device/patches" },
+                    { icon: Zap, label: "Sync timeline", href: "/device/sync" },
                 ];
             default:
                 return [];

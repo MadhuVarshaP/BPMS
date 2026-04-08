@@ -1,28 +1,84 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card } from "@/components/Cards";
 import { Button } from "@/components/UI";
-import { FormInput } from "@/components/Forms";
 import {
-    Settings,
-    Info,
     ShieldAlert,
     Trash2,
-    Database,
     Globe,
-    Network,
     Cpu,
     Users,
     Package,
     Key,
     DatabaseIcon,
-    Server
+    Server,
+    RefreshCw
 } from "lucide-react";
-import { ADMIN_ADDRESS, PUBLISHER_LIST, DEVICE_LIST } from "@/data/mockData";
+import { useWallet } from "@/context/WalletContext";
+import { useToast } from "@/context/ToastContext";
+import { apiGet } from "@/lib/api";
+
+type Metrics = {
+    totalPatches: number;
+    activeDevices: number;
+};
+
+type PublishersResponse = { count: number };
 
 export default function AdminSettings() {
+    const { address } = useWallet();
+    const { showToast } = useToast();
+    const [metrics, setMetrics] = useState<Metrics | null>(null);
+    const [publisherCount, setPublisherCount] = useState(0);
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    async function loadMetrics() {
+        if (!address) return;
+        const [metricsRes, publishersRes] = await Promise.all([
+            apiGet("/api/admin/metrics", address),
+            apiGet("/api/admin/publishers", address)
+        ]);
+        setMetrics(metricsRes as Metrics);
+        setPublisherCount((publishersRes as PublishersResponse).count || 0);
+    }
+
+    useEffect(() => {
+        if (!address) return;
+        let cancelled = false;
+        loadMetrics().then(() => { if (cancelled) return; });
+        return () => { cancelled = true; };
+    }, [address]);
+
+    async function handleSyncChain() {
+        if (!address || isSyncing) return;
+        setIsSyncing(true);
+        try {
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+            const response = await fetch(`${baseUrl}/api/admin/sync-chain`, {
+                method: "POST",
+                headers: { "x-wallet-address": address },
+            });
+            const data = (await response.json()) as {
+                synced?: number;
+                skipped?: number;
+                total?: number;
+                error?: string;
+            };
+            if (!response.ok) throw new Error(data.error || "Sync failed");
+            showToast(
+                `Chain sync: ${data.synced} new, ${data.skipped} existing, ${data.total} on-chain`,
+                "success"
+            );
+            await loadMetrics();
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : "Sync failed", "error");
+        } finally {
+            setIsSyncing(false);
+        }
+    }
+
     return (
         <DashboardLayout>
             <div className="flex flex-col gap-8">
@@ -43,14 +99,14 @@ export default function AdminSettings() {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <Globe size={16} className="text-slate-500" />
-                                        <span className="text-xs font-mono text-slate-300">0x8932Cc72386762C92a95c34538C40Ef850D5C921</span>
+                                        <span className="text-xs font-mono text-slate-300">${process.env.NEXT_PUBLIC_CONTRACT_ADDRESS}</span>
                                     </div>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="p-4 bg-slate-900/50 rounded-2xl border border-white/5 space-y-2">
                                         <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Sync Protocol</p>
-                                        <p className="text-sm font-bold text-white tracking-tight uppercase">Base Sepolia V2</p>
+                                        <p className="text-sm font-bold text-white tracking-tight uppercase">Base Sepolia</p>
                                     </div>
                                     <div className="p-4 bg-slate-900/50 rounded-2xl border border-white/5 space-y-2">
                                         <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Block Confirmations</p>
@@ -58,8 +114,14 @@ export default function AdminSettings() {
                                     </div>
                                 </div>
 
-                                <Button variant="outline" className="w-full rounded-xl py-3 border-white/5 text-slate-400 hover:text-white transition-all text-[11px] font-bold uppercase tracking-widest">
-                                    Update Registry Parameters
+                                <Button
+                                    variant="outline"
+                                    className="w-full rounded-xl py-3 border-white/5 text-slate-400 hover:text-white transition-all text-[11px] font-bold uppercase tracking-widest"
+                                    onClick={handleSyncChain}
+                                    isLoading={isSyncing}
+                                >
+                                    <RefreshCw size={14} className="mr-2" />
+                                    Sync All Patches from Chain
                                 </Button>
                             </div>
                         </Card>
@@ -100,9 +162,9 @@ export default function AdminSettings() {
                             <div className="grid grid-cols-2 gap-4 mt-4">
                                 {[
                                     { label: "Admin Hash", count: 1, icon: Key, color: "text-emerald-500" },
-                                    { label: "Publisher Nodes", count: PUBLISHER_LIST.length, icon: Users, color: "text-blue-500" },
-                                    { label: "Device Certificates", count: DEVICE_LIST.length, icon: Cpu, color: "text-amber-500" },
-                                    { label: "Blob Capacity", count: "Unlimited", icon: Package, color: "text-slate-500" },
+                                    { label: "Publisher Nodes", count: publisherCount, icon: Users, color: "text-blue-500" },
+                                    { label: "Device Certificates", count: metrics?.activeDevices || 0, icon: Cpu, color: "text-amber-500" },
+                                    { label: "Patch Records", count: metrics?.totalPatches || 0, icon: Package, color: "text-slate-500" },
                                 ].map((item, i) => (
                                     <div key={i} className="p-4 bg-slate-900/50 rounded-2xl border border-white/5">
                                         <div className="flex items-center gap-3 mb-3">

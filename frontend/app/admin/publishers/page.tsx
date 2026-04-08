@@ -5,7 +5,7 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card } from "@/components/Cards";
 import { Badge, Button } from "@/components/UI";
 import { Modal, FormInput } from "@/components/Forms";
-import { Plus, AlertCircle, ShieldCheck } from "lucide-react";
+import { Plus, AlertCircle, ShieldCheck, Ban } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { useToast } from "@/context/ToastContext";
 import { bpmsContractAbi } from "@/lib/contractAbi";
@@ -24,6 +24,7 @@ export default function AdminPublishers() {
     const [publishers, setPublishers] = useState<Publisher[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [revokingWallet, setRevokingWallet] = useState<string | null>(null);
     const { address: adminAddress } = useWallet();
     const { showToast } = useToast();
 
@@ -54,6 +55,34 @@ export default function AdminPublishers() {
         void fetchPublishers();
     }, [fetchPublishers]);
 
+    async function syncAuthorizedPublisher(walletAddress: string) {
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+        let lastError = "Failed to sync authorized publisher";
+
+        for (let attempt = 1; attempt <= 4; attempt++) {
+            const response = await fetch(`${baseUrl}/api/admin/authorize-publisher`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-wallet-address": adminAddress || "",
+                },
+                body: JSON.stringify({ walletAddress }),
+            });
+            const payload = (await response.json()) as { error?: string };
+            if (response.ok) return;
+
+            lastError = payload.error || lastError;
+            const waitingOnChain =
+                response.status === 400 &&
+                typeof payload.error === "string" &&
+                payload.error.toLowerCase().includes("not authorized on-chain yet");
+            if (!waitingOnChain || attempt === 4) {
+                throw new Error(lastError);
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1200));
+        }
+    }
+
     async function handleAuthorizePublisher() {
         if (!adminAddress || !address || isSubmitting) return;
         setIsSubmitting(true);
@@ -63,21 +92,7 @@ export default function AdminPublishers() {
             const tx = await contract.authorizePublisher(address.trim());
             await tx.wait();
 
-            const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-            const response = await fetch(`${baseUrl}/api/admin/authorize-publisher`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-wallet-address": adminAddress,
-                },
-                body: JSON.stringify({
-                    walletAddress: address.trim(),
-                }),
-            });
-            const payload = (await response.json()) as { error?: string };
-            if (!response.ok) {
-                throw new Error(payload.error || "Failed to sync authorized publisher");
-            }
+            await syncAuthorizedPublisher(address.trim());
             showToast("Publisher authorized successfully", "success");
             setAddress("");
             setIsModalOpen(false);
@@ -86,6 +101,38 @@ export default function AdminPublishers() {
             showToast(error instanceof Error ? error.message : "Authorization failed", "error");
         } finally {
             setIsSubmitting(false);
+        }
+    }
+
+    async function handleRevokePublisher(walletAddress: string) {
+        if (!adminAddress || revokingWallet) return;
+        setRevokingWallet(walletAddress);
+        try {
+            const contractAddress = getFrontendContractAddress();
+            const contract = await getContractWithSigner(contractAddress, bpmsContractAbi);
+            const tx = await contract.revokePublisher(walletAddress);
+            await tx.wait();
+
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+            const response = await fetch(`${baseUrl}/api/admin/revoke-publisher`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-wallet-address": adminAddress,
+                },
+                body: JSON.stringify({ walletAddress }),
+            });
+            const payload = (await response.json()) as { error?: string };
+            if (!response.ok) {
+                throw new Error(payload.error || "Failed to sync publisher revocation");
+            }
+
+            showToast("Publisher revoked on-chain and synced", "success");
+            await fetchPublishers();
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : "Revoke failed", "error");
+        } finally {
+            setRevokingWallet(null);
         }
     }
 
@@ -114,16 +161,17 @@ export default function AdminPublishers() {
                                     <th>Role</th>
                                     <th>Permission Status</th>
                                     <th>Added</th>
+                                    <th className="text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {isLoading ? (
                                     <tr>
-                                        <td colSpan={4} className="text-slate-400">Loading publishers...</td>
+                                        <td colSpan={5} className="text-slate-400">Loading publishers...</td>
                                     </tr>
                                 ) : publishers.length === 0 ? (
                                     <tr>
-                                        <td colSpan={4} className="text-slate-400">No authorized publishers found.</td>
+                                        <td colSpan={5} className="text-slate-400">No authorized publishers found.</td>
                                     </tr>
                                 ) : publishers.map((pub) => (
                                     <tr key={pub.walletAddress} className="group hover:bg-white/1">
@@ -147,6 +195,18 @@ export default function AdminPublishers() {
                                         </td>
                                         <td className="text-xs text-slate-400">
                                             {new Date(pub.createdAt).toLocaleDateString()}
+                                        </td>
+                                        <td className="text-right">
+                                            <Button
+                                                variant="danger"
+                                                className="min-w-24"
+                                                isLoading={revokingWallet === pub.walletAddress}
+                                                disabled={Boolean(revokingWallet) && revokingWallet !== pub.walletAddress}
+                                                onClick={() => void handleRevokePublisher(pub.walletAddress)}
+                                            >
+                                                <Ban size={14} className="mr-1" />
+                                                Revoke
+                                            </Button>
                                         </td>
                                     </tr>
                                 ))}

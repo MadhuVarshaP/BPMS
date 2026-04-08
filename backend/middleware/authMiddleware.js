@@ -1,5 +1,6 @@
-const { normalizeAddress } = require("../config/blockchain");
+const { getReadOnlyContract, normalizeAddress } = require("../config/blockchain");
 const User = require("../models/User");
+const { ensureUserFromChain } = require("../services/userService");
 
 function extractAuthPayload(req) {
   return {
@@ -21,7 +22,10 @@ async function requireAuth(req, res, next) {
 
     const normalizedAddress = normalizeAddress(walletAddress);
 
-    const user = await User.findOne({ walletAddress: normalizedAddress });
+    let user = await User.findOne({ walletAddress: normalizedAddress });
+    if (!user) {
+      user = await ensureUserFromChain(normalizedAddress);
+    }
     if (!user || user.status !== "active") {
       return res
         .status(403)
@@ -44,7 +48,7 @@ async function requireAuth(req, res, next) {
 }
 
 function requireRole(allowedRoles) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!req.auth) {
       return res.status(401).json({ error: "Authentication required" });
     }
@@ -59,6 +63,41 @@ function requireRole(allowedRoles) {
         requiredRole: accepted,
         yourRole: req.auth.role
       });
+    }
+
+    // Enforce on-chain role membership for runtime-sensitive roles.
+    if (req.auth.role === "publisher" || req.auth.role === "device") {
+      try {
+        const contract = getReadOnlyContract();
+        if (req.auth.role === "publisher") {
+          const authorized = await contract.authorizedPublishers(req.auth.walletAddress);
+          if (!authorized) {
+            return res.status(403).json({
+              error: "Publisher role is not active on-chain",
+              hint: "Ask admin to authorize this wallet on-chain and sync"
+            });
+          }
+        }
+        if (req.auth.role === "device") {
+          const registered = await contract.registeredDevices(req.auth.walletAddress);
+          if (!registered) {
+            return res.status(403).json({
+              error: "Device role is not active on-chain",
+              hint: "Ask admin to register this wallet on-chain and sync"
+            });
+          }
+        }
+      } catch (error) {
+        // In non-strict mode, fall back to DB role checks to keep UX usable
+        // when RPC is temporarily unavailable/misconfigured.
+        const strictChainEnforcement = process.env.CHAIN_ROLE_ENFORCEMENT === "strict";
+        if (strictChainEnforcement) {
+          return res.status(503).json({
+            error: "Blockchain role verification unavailable",
+            detail: error.message
+          });
+        }
+      }
     }
 
     return next();

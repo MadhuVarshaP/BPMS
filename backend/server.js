@@ -8,6 +8,7 @@ const connectDB = require("./config/db");
 const { initBlockchain } = require("./config/blockchain");
 const { startEventSyncListener } = require("./services/eventSyncService");
 const { ensureAdminUser } = require("./services/userService");
+const { syncAllPatchesFromChain } = require("./services/chainSyncService");
 const logger = require("./utils/logger");
 
 const publicRoutes = require("./routes/publicRoutes");
@@ -56,6 +57,10 @@ async function bootstrap() {
     initBlockchain();
     startEventSyncListener();
     logger.info("Blockchain initialized successfully");
+
+    syncAllPatchesFromChain().catch((err) => {
+      logger.error("Initial chain sync failed", err.message);
+    });
   } catch (error) {
     logger.error("Blockchain initialization warning", error.message);
   }

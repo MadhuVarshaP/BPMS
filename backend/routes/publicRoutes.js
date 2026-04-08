@@ -83,4 +83,52 @@ router.post("/request/publisher", async (req, res, next) => {
   }
 });
 
+router.post("/request/device", async (req, res, next) => {
+  try {
+    const walletAddress = req.body?.walletAddress;
+    if (!walletAddress) {
+      return res.status(400).json({ error: "walletAddress is required" });
+    }
+
+    const normalized = normalizeAddress(walletAddress);
+    const existingUser = await User.findOne({ walletAddress: normalized });
+
+    if (existingUser?.role === "device" && existingUser?.status === "active") {
+      return res.status(200).json({
+        message: "Wallet is already an active device",
+        status: "already-active",
+        request: null
+      });
+    }
+
+    const existingPending = await AccessRequest.findOne({
+      walletAddress: normalized,
+      requestedRole: "device",
+      status: "pending"
+    });
+
+    if (existingPending) {
+      return res.status(200).json({
+        message: "Device access request already pending",
+        status: "pending",
+        request: existingPending
+      });
+    }
+
+    const request = await AccessRequest.create({
+      walletAddress: normalized,
+      requestedRole: "device",
+      status: "pending"
+    });
+
+    return res.status(201).json({
+      message: "Device access request submitted",
+      status: "pending",
+      request
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 module.exports = router;

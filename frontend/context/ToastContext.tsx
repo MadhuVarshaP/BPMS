@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { CheckCircle2, XCircle, AlertCircle, Info, X } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -25,23 +25,27 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
     const [toasts, setToasts] = useState<Toast[]>([]);
+    const toastCounterRef = useRef(0);
 
-    const showToast = (message: string, type: ToastType = "info") => {
-        const id = Date.now();
+    const showToast = useCallback((message: string, type: ToastType = "info") => {
+        toastCounterRef.current += 1;
+        const id = Date.now() * 1000 + toastCounterRef.current;
         setToasts((prev) => [...prev, { id, message, type }]);
         setTimeout(() => {
             setToasts((prev) => prev.filter((t) => t.id !== id));
         }, 4000);
-    };
+    }, []);
 
-    const removeToast = (id: number) => {
+    const removeToast = useCallback((id: number) => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
-    };
+    }, []);
+
+    const contextValue = useMemo(() => ({ showToast }), [showToast]);
 
     return (
-        <ToastContext.Provider value={{ showToast }}>
+        <ToastContext.Provider value={contextValue}>
             {children}
-            <div className="fixed bottom-6 right-6 z-[200] flex flex-col gap-3 max-w-sm w-full">
+            <div className="fixed bottom-6 right-6 z-200 flex flex-col gap-3 max-w-sm w-full">
                 {toasts.map((toast) => (
                     <div
                         key={toast.id}

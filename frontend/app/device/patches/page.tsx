@@ -1,47 +1,49 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card } from "@/components/Cards";
-import { Badge, Button } from "@/components/UI";
+import { Button } from "@/components/UI";
 import { Modal } from "@/components/Forms";
 import {
-    Package,
-    Search,
     Eye,
-    Download,
     ShieldCheck,
-    ExternalLink,
-    CheckCircle2,
-    XCircle,
-    Clock,
-    Activity,
-    History,
     Lock,
-    Zap,
-    Cpu,
     RefreshCw,
-    Terminal,
-    Monitor
+    History
 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
-import { INSTALL_LOGS, PATCHES } from "@/data/mockData";
+import { apiGet } from "@/lib/api";
+
+type Patch = {
+    _id: string;
+    patchId: number;
+    softwareName: string;
+    version: string;
+    targetPlatform?: string;
+    ipfsHash: string;
+    fileHash: string;
+    releaseTime: string;
+};
 
 export default function DevicePatches() {
     const { address } = useWallet();
-    const [selectedPatch, setSelectedPatch] = useState<any>(null);
+    const [selectedPatch, setSelectedPatch] = useState<Patch | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [patches, setPatches] = useState<Patch[]>([]);
 
-    // Filter logs for THIS device that were SUCCESSFUL
-    const mySuccessfulLogs = INSTALL_LOGS.filter(l =>
-        l.device.toLowerCase() === address?.toLowerCase() && l.status === "success"
-    );
+    useEffect(() => {
+        if (!address) return;
+        let cancelled = false;
+        async function load() {
+            const data = await apiGet("/api/device/patches", address);
+            if (!cancelled) setPatches(((data as { patches?: Patch[] }).patches || []));
+        }
+        void load();
+        return () => { cancelled = true; };
+    }, [address]);
 
-    // Get unique patches from logs
-    const installedPatchIds = Array.from(new Set(mySuccessfulLogs.map(l => l.patchId)));
-    const myPatches = PATCHES.filter(p => installedPatchIds.includes(p.id));
-
-    const handleOpenDetails = (patch: any) => {
+    const handleOpenDetails = (patch: Patch) => {
         setSelectedPatch(patch);
         setIsModalOpen(true);
     };
@@ -54,15 +56,7 @@ export default function DevicePatches() {
                         <h1 className="text-4xl font-black text-white leading-tight tracking-tight tracking-tighter">Installed Inventory</h1>
                         <p className="text-slate-400 font-medium font-inter">Verified software artifacts currently running on this hardware endpoint.</p>
                     </div>
-                    <div className="flex gap-4">
-                        <div className="relative group">
-                            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-emerald-500 transition-colors" />
-                            <input
-                                placeholder="Find in inventory..."
-                                className="bg-slate-900 border border-white/5 rounded-xl px-12 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 w-full md:w-80 transition-all font-mono"
-                            />
-                        </div>
-                    </div>
+                    <div />
                 </div>
 
                 {/* Patches Table */}
@@ -73,6 +67,7 @@ export default function DevicePatches() {
                                 <tr>
                                     <th>Patch Identity</th>
                                     <th>Software Name</th>
+                                    <th>Platform</th>
                                     <th>Installed Build</th>
                                     <th>Activation Date</th>
                                     <th>Integrity Status</th>
@@ -80,24 +75,25 @@ export default function DevicePatches() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {myPatches.map((patch, idx) => {
-                                    const log = mySuccessfulLogs.find(l => l.patchId === patch.id);
-                                    return (
-                                        <tr key={idx} className="group hover:bg-white/[0.01]">
+                                {patches.map((patch) => (
+                                        <tr key={patch._id} className="group hover:bg-white/[0.01]">
                                             <td className="font-mono text-emerald-500 text-xs font-bold uppercase tracking-widest">
-                                                #P0-0{patch.id}
+                                                #P0-0{patch.patchId}
                                             </td>
                                             <td>
                                                 <div className="flex flex-col">
-                                                    <span className="text-sm font-bold text-white tracking-tight">{patch.software}</span>
+                                                    <span className="text-sm font-bold text-white tracking-tight">{patch.softwareName}</span>
                                                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 font-inter">DECENTRALIZED BINARY</span>
                                                 </div>
+                                            </td>
+                                            <td className="text-xs font-bold text-slate-400 uppercase">
+                                                {patch.targetPlatform || "—"}
                                             </td>
                                             <td className="text-sm font-bold text-slate-300">
                                                 V{patch.version}
                                             </td>
                                             <td className="text-xs text-slate-500 font-medium">
-                                                {log?.timestamp || patch.releaseDate}
+                                                {new Date(patch.releaseTime).toLocaleString()}
                                             </td>
                                             <td>
                                                 <div className="flex items-center gap-2">
@@ -116,13 +112,12 @@ export default function DevicePatches() {
                                                 </div>
                                             </td>
                                         </tr>
-                                    );
-                                })}
+                                ))}
                             </tbody>
                         </table>
                     </div>
 
-                    {myPatches.length === 0 && (
+                    {patches.length === 0 && (
                         <div className="py-24 text-center">
                             <div className="flex flex-col items-center gap-4 py-8 opacity-20">
                                 <History size={48} className="text-slate-500" />
@@ -171,12 +166,8 @@ export default function DevicePatches() {
                             <Card className="bg-slate-900 border-white/5 mt-4" title="Distributor Manifest">
                                 <div className="space-y-3">
                                     <div className="flex justify-between items-center text-[11px]">
-                                        <span className="text-slate-500 font-bold uppercase tracking-wider">Signed By</span>
-                                        <span className="text-slate-300 font-mono truncate max-w-[140px]">{selectedPatch.publisher}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center text-[11px]">
                                         <span className="text-slate-500 font-bold uppercase tracking-wider">Certification Date</span>
-                                        <span className="text-slate-300 font-mono">{selectedPatch.releaseDate}</span>
+                                        <span className="text-slate-300 font-mono">{new Date(selectedPatch.releaseTime).toLocaleString()}</span>
                                     </div>
                                 </div>
                             </Card>

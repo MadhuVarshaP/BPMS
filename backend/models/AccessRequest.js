@@ -11,7 +11,7 @@ const accessRequestSchema = new mongoose.Schema(
     },
     requestedRole: {
       type: String,
-      enum: ["publisher"],
+      enum: ["publisher", "device"],
       required: true,
       default: "publisher"
     },

@@ -38,6 +38,23 @@ const deviceSchema = new mongoose.Schema(
       enum: ["registered", "revoked", "disabled"],
       default: "registered"
     },
+    displayName: {
+      type: String,
+      trim: true
+    },
+    currentSoftwareNamespace: {
+      type: String,
+      trim: true
+    },
+    currentVersion: {
+      type: String,
+      trim: true
+    },
+    targetPlatform: {
+      type: String,
+      trim: true,
+      lowercase: true
+    },
     lastSeen: {
       type: Date,
       default: Date.now

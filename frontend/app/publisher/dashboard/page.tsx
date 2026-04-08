@@ -1,43 +1,75 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatCard, Card } from "@/components/Cards";
 import { Badge, Button } from "@/components/UI";
 import {
     Package,
     CheckCircle2,
-    XCircle,
     Activity,
-    Clock,
     ExternalLink,
     PlusCircle,
     BarChart3,
     TrendingUp,
-    Cpu,
     Monitor,
     ShieldCheck
 } from "lucide-react";
-import { PATCHES, INSTALL_LOGS, DEVICES } from "@/data/mockData";
 import { useWallet } from "@/context/WalletContext";
 import Link from "next/link";
+import { apiGet } from "@/lib/api";
+
+type Patch = {
+    _id: string;
+    patchId: number;
+    softwareName: string;
+    version: string;
+    active: boolean;
+    installCount?: number;
+    successRate?: number;
+};
+
+type Log = {
+    _id: string;
+    deviceAddress: string;
+    patchId: number;
+    status: "success" | "failure";
+    timestamp: string;
+};
+
+type Analytics = {
+    totalPatches: number;
+    activePatches: number;
+    successRate: number;
+};
 
 export default function PublisherDashboard() {
     const { address } = useWallet();
+    const [patches, setPatches] = useState<Patch[]>([]);
+    const [logs, setLogs] = useState<Log[]>([]);
+    const [analytics, setAnalytics] = useState<Analytics | null>(null);
 
-    // Filter patches by publisher
-    const myPatches = PATCHES.filter(p => p.publisher.toLowerCase() === address?.toLowerCase());
-    const activePatches = myPatches.filter(p => p.active).length;
-    const totalInstalls = myPatches.reduce((acc, p) => acc + p.installCount, 0);
-    const avgSuccessRate = myPatches.length > 0
-        ? Math.round(myPatches.reduce((acc, p) => acc + p.successRate, 0) / myPatches.length)
-        : 0;
+    useEffect(() => {
+        if (!address) return;
+        let cancelled = false;
+        async function load() {
+            const [p, l, a] = await Promise.all([
+                apiGet("/api/publisher/patches", address),
+                apiGet("/api/publisher/logs", address),
+                apiGet("/api/publisher/analytics", address)
+            ]);
+            if (cancelled) return;
+            setPatches(((p as { patches?: Patch[] }).patches || []));
+            setLogs(((l as { logs?: Log[] }).logs || []).slice(0, 6));
+            setAnalytics(a as Analytics);
+        }
+        void load();
+        return () => {
+            cancelled = true;
+        };
+    }, [address]);
 
-    // Recent installations of MY patches
-    const myPatchIds = myPatches.map(p => p.id);
-    const myRecentInstalls = INSTALL_LOGS
-        .filter(log => myPatchIds.includes(log.patchId))
-        .slice(0, 6);
+    const totalInstalls = patches.reduce((acc, p) => acc + (p.installCount || 0), 0);
 
     return (
         <DashboardLayout>
@@ -61,12 +93,12 @@ export default function PublisherDashboard() {
                     <StatCard
                         icon={Package}
                         label="My Patches"
-                        value={myPatches.length}
+                        value={analytics?.totalPatches || 0}
                     />
                     <StatCard
                         icon={CheckCircle2}
                         label="Active Distribution"
-                        value={activePatches}
+                        value={analytics?.activePatches || 0}
                         className="border-emerald-500/10 shadow-emerald-500/5"
                     />
                     <StatCard
@@ -79,7 +111,7 @@ export default function PublisherDashboard() {
                     <StatCard
                         icon={TrendingUp}
                         label="Avg. Reliability"
-                        value={`${avgSuccessRate}%`}
+                        value={`${Math.round(analytics?.successRate || 0)}%`}
                     />
                 </div>
 
@@ -100,19 +132,19 @@ export default function PublisherDashboard() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {myRecentInstalls.length > 0 ? (
-                                            myRecentInstalls.map((log, idx) => {
-                                                const patch = PATCHES.find(p => p.id === log.patchId);
+                                        {logs.length > 0 ? (
+                                            logs.map((log) => {
+                                                const patch = patches.find((p) => p.patchId === log.patchId);
                                                 return (
-                                                    <tr key={idx} className="group hover:bg-white/[0.01]">
+                                                    <tr key={log._id} className="group hover:bg-white/[0.01]">
                                                         <td>
                                                             <div className="flex flex-col">
-                                                                <span className="text-sm font-bold text-white">{patch?.software}</span>
+                                                                <span className="text-sm font-bold text-white">{patch?.softwareName || `Patch #${log.patchId}`}</span>
                                                                 <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">V{patch?.version}</span>
                                                             </div>
                                                         </td>
                                                         <td className="text-xs font-mono text-slate-400">
-                                                            {log.device.slice(0, 10)}...{log.device.slice(-8)}
+                                                            {log.deviceAddress.slice(0, 10)}...{log.deviceAddress.slice(-8)}
                                                         </td>
                                                         <td>
                                                             <Badge variant={log.status === "success" ? "success" : "error"}>
@@ -120,7 +152,7 @@ export default function PublisherDashboard() {
                                                             </Badge>
                                                         </td>
                                                         <td className="text-xs text-slate-500 font-mono">
-                                                            {log.timestamp}
+                                                            {new Date(log.timestamp).toLocaleString()}
                                                         </td>
                                                         <td className="text-right">
                                                             <button className="p-2 text-slate-600 hover:text-emerald-500 transition-colors">
@@ -155,14 +187,14 @@ export default function PublisherDashboard() {
                     <div className="space-y-6">
                         <Card title="Version Performance" className="border-blue-500/10 shadow-blue-500/5">
                             <div className="space-y-6">
-                                {myPatches.slice(0, 3).map((patch, i) => (
+                                {patches.slice(0, 3).map((patch, i) => (
                                     <div key={i} className="space-y-2">
                                         <div className="flex justify-between items-center text-xs font-black uppercase tracking-tighter">
-                                            <span className="text-slate-400">{patch.software} <span className="text-slate-600 font-bold ml-1">{patch.version}</span></span>
-                                            <span className="text-blue-500">{patch.successRate}% OK</span>
+                                            <span className="text-slate-400">{patch.softwareName} <span className="text-slate-600 font-bold ml-1">{patch.version}</span></span>
+                                            <span className="text-blue-500">{Math.round(patch.successRate || 0)}% OK</span>
                                         </div>
                                         <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
-                                            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${patch.successRate}%` }} />
+                                            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${patch.successRate || 0}%` }} />
                                         </div>
                                     </div>
                                 ))}

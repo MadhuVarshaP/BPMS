@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatCard, Card } from "@/components/Cards";
 import { Badge } from "@/components/UI";
@@ -11,20 +11,58 @@ import {
     XCircle,
     TrendingUp,
     Activity,
-    Clock,
-    ArrowRight
+    Clock
 } from "lucide-react";
-import { PATCHES, DEVICES, INSTALL_LOGS } from "@/data/mockData";
+import { useWallet } from "@/context/WalletContext";
+import { apiGet } from "@/lib/api";
+
+type Metrics = {
+    totalPatches: number;
+    activeDevices: number;
+    totalLogs: number;
+    successLogs: number;
+    successRate: number;
+};
+
+type InstallationLog = {
+    _id: string;
+    deviceAddress: string;
+    patchId: number;
+    status: "success" | "failure";
+    timestamp: string;
+};
 
 export default function AdminDashboard() {
-    // Aggregate stats
-    const totalPatches = PATCHES.length;
-    const activeDevices = DEVICES.filter(d => d.status === "registered").length;
-    const successfulInstalls = INSTALL_LOGS.filter(l => l.status === "success").length;
-    const failedInstalls = INSTALL_LOGS.filter(l => l.status === "failed").length;
-    const complianceRate = Math.round(
-        DEVICES.reduce((acc, d) => acc + d.compliance, 0) / DEVICES.length
-    );
+    const { address } = useWallet();
+    const [metrics, setMetrics] = useState<Metrics | null>(null);
+    const [logs, setLogs] = useState<InstallationLog[]>([]);
+
+    useEffect(() => {
+        if (!address) return;
+        let cancelled = false;
+
+        async function load() {
+            const [metricsRes, logsRes] = await Promise.all([
+                apiGet("/api/admin/metrics", address),
+                apiGet("/api/admin/logs?limit=6", address),
+            ]);
+
+            if (cancelled) return;
+            setMetrics(metricsRes as Metrics);
+            setLogs(((logsRes as { logs?: InstallationLog[] }).logs || []));
+        }
+
+        void load();
+        return () => {
+            cancelled = true;
+        };
+    }, [address]);
+
+    const totalPatches = metrics?.totalPatches ?? 0;
+    const activeDevices = metrics?.activeDevices ?? 0;
+    const successfulInstalls = metrics?.successLogs ?? 0;
+    const failedInstalls = Math.max((metrics?.totalLogs ?? 0) - successfulInstalls, 0);
+    const complianceRate = Math.round((metrics?.successRate ?? 0) * 100);
 
     return (
         <DashboardLayout>
@@ -85,8 +123,8 @@ export default function AdminDashboard() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {INSTALL_LOGS.slice(0, 6).map((log, idx) => (
-                                            <tr key={idx} className="group hover:bg-white/[0.02]">
+                                        {logs.map((log) => (
+                                            <tr key={log._id} className="group hover:bg-white/[0.02]">
                                                 <td className="font-semibold text-slate-300">
                                                     <div className="flex items-center gap-2">
                                                         <Activity size={14} className="text-emerald-500" />
@@ -95,7 +133,7 @@ export default function AdminDashboard() {
                                                 </td>
                                                 <td className="text-sm font-mono text-slate-400">#P00{log.patchId}</td>
                                                 <td className="text-sm text-slate-500 font-mono">
-                                                    {log.device.slice(0, 6)}...{log.device.slice(-4)}
+                                                    {log.deviceAddress.slice(0, 6)}...{log.deviceAddress.slice(-4)}
                                                 </td>
                                                 <td>
                                                     <Badge variant={log.status === "success" ? "success" : "error"}>
@@ -105,7 +143,7 @@ export default function AdminDashboard() {
                                                 <td className="text-xs text-slate-500">
                                                     <div className="flex items-center gap-1">
                                                         <Clock size={12} />
-                                                        {log.timestamp}
+                                                        {new Date(log.timestamp).toLocaleString()}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -113,9 +151,6 @@ export default function AdminDashboard() {
                                     </tbody>
                                 </table>
                             </div>
-                            <button className="w-full py-4 mt-6 text-sm font-bold text-slate-500 hover:text-emerald-500 flex items-center justify-center gap-2 border-t border-white/5 transition-colors">
-                                View All Activity Logs <ArrowRight size={14} />
-                            </button>
                         </Card>
                     </div>
 

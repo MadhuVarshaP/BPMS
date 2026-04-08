@@ -9,7 +9,8 @@ import {
     Plus,
     Monitor,
     History,
-    CheckCircle2
+    CheckCircle2,
+    Ban
 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { useToast } from "@/context/ToastContext";
@@ -34,6 +35,7 @@ export default function AdminDevices() {
     const [devices, setDevices] = useState<Device[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [revokingWallet, setRevokingWallet] = useState<string | null>(null);
     const { address } = useWallet();
     const { showToast } = useToast();
 
@@ -111,6 +113,40 @@ export default function AdminDevices() {
         }
     }
 
+    async function handleRevokeDevice(device: Device) {
+        if (!address || revokingWallet) return;
+        setRevokingWallet(device.walletAddress);
+        try {
+            const contractAddress = getFrontendContractAddress();
+            const contract = await getContractWithSigner(contractAddress, bpmsContractAbi);
+            const tx = await contract.revokeDevice(device.walletAddress);
+            await tx.wait();
+
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+            const response = await fetch(`${baseUrl}/api/admin/revoke-device`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-wallet-address": address,
+                },
+                body: JSON.stringify({
+                    walletAddress: device.walletAddress,
+                }),
+            });
+            const payload = (await response.json()) as { error?: string };
+            if (!response.ok) {
+                throw new Error(payload.error || "Failed to sync revoked device");
+            }
+
+            showToast("Device revoked on chain and synced", "success");
+            await fetchDevices();
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : "Device revoke failed", "error");
+        } finally {
+            setRevokingWallet(null);
+        }
+    }
+
     const dashboardStats = [
         { label: "Total Registered", value: devices.filter(d => d.status === "registered").length, icon: CheckCircle2, color: "text-emerald-500" },
         { label: "Revoked", value: devices.filter(d => d.status === "revoked").length, icon: History, color: "text-slate-500" },
@@ -159,16 +195,17 @@ export default function AdminDevices() {
                                     <th>Type</th>
                                     <th>Status</th>
                                     <th>Last Seen</th>
+                                    <th className="text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {isLoading ? (
                                     <tr>
-                                        <td colSpan={5} className="text-slate-400">Loading devices...</td>
+                                        <td colSpan={6} className="text-slate-400">Loading devices...</td>
                                     </tr>
                                 ) : devices.length === 0 ? (
                                     <tr>
-                                        <td colSpan={5} className="text-slate-400">No devices found.</td>
+                                        <td colSpan={6} className="text-slate-400">No devices found.</td>
                                     </tr>
                                 ) : devices.map((device) => (
                                     <tr key={device.walletAddress} className="group hover:bg-white/1">
@@ -191,6 +228,18 @@ export default function AdminDevices() {
                                         </td>
                                         <td className="text-sm text-slate-400 font-medium">
                                             {new Date(device.lastSeen).toLocaleString()}
+                                        </td>
+                                        <td className="text-right">
+                                            <Button
+                                                variant="danger"
+                                                className="min-w-24"
+                                                isLoading={revokingWallet === device.walletAddress}
+                                                disabled={device.status !== "registered" || (Boolean(revokingWallet) && revokingWallet !== device.walletAddress)}
+                                                onClick={() => void handleRevokeDevice(device)}
+                                            >
+                                                <Ban size={14} className="mr-1" />
+                                                Revoke
+                                            </Button>
                                         </td>
                                     </tr>
                                 ))}

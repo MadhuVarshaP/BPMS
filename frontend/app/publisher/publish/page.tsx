@@ -6,19 +6,8 @@ import { Card } from "@/components/Cards";
 import { Button, Badge } from "@/components/UI";
 import { FormInput } from "@/components/Forms";
 import {
-    PlusCircle,
-    Package,
-    Terminal,
-    Activity,
     ShieldCheck,
-    ExternalLink,
-    Download,
-    Trash2,
-    Upload,
-    X,
     Database,
-    Cpu,
-    CheckCircle2,
     Loader2,
     FileCode,
     Hash,
@@ -26,26 +15,122 @@ import {
 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/context/ToastContext";
+import { bpmsContractAbi } from "@/lib/contractAbi";
+import { getContractWithSigner, getFrontendContractAddress, getSigner } from "@/lib/ethers";
 
 export default function PublisherPublish() {
+    const { address } = useWallet();
+    const { showToast } = useToast();
     const [formData, setFormData] = useState({
-        name: "",
+        namespace: "",
         version: "",
+        platform: "",
         ipfs: "",
         fileHash: "",
     });
+    const [patchFile, setPatchFile] = useState<File | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
     const [isPublishing, setIsPublishing] = useState(false);
-    const [previewActive, setPreviewActive] = useState(false);
+    const [publishPhase, setPublishPhase] = useState<
+        "idle" | "signing" | "confirming" | "syncing" | "done"
+    >("idle");
     const router = useRouter();
 
-    const handlePublish = () => {
-        setIsPublishing(true);
-        // Simulation
-        setTimeout(() => {
-            setIsPublishing(false);
-            router.push("/publisher/patches");
-        }, 2000);
+    const handleUpload = async () => {
+        if (!address || !patchFile) return;
+        setIsUploading(true);
+        try {
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+            const form = new FormData();
+            form.append("patchFile", patchFile);
+            const response = await fetch(`${baseUrl}/api/publisher/upload`, {
+                method: "POST",
+                headers: { "x-wallet-address": address },
+                body: form,
+            });
+            const payload = (await response.json()) as {
+                ipfsHash?: string;
+                fileHash?: string;
+                error?: string;
+            };
+            if (!response.ok) throw new Error(payload.error || "Upload failed");
+            setFormData((prev) => ({
+                ...prev,
+                ipfs: payload.ipfsHash || "",
+                fileHash: payload.fileHash || "",
+            }));
+            showToast("File uploaded. IPFS + SHA256 generated.", "success");
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : "Upload failed", "error");
+        } finally {
+            setIsUploading(false);
+        }
     };
+
+    const handlePublish = async () => {
+        if (!address) return;
+        setIsPublishing(true);
+        setPublishPhase("signing");
+        try {
+            const namespace = formData.namespace.trim();
+            const version = formData.version.trim();
+            const platform = formData.platform.trim();
+            const ipfsHash = formData.ipfs.trim();
+            const fileHash = formData.fileHash.trim();
+
+            if (!namespace || !version || !platform || !ipfsHash || !fileHash) {
+                throw new Error("All fields are required before publishing.");
+            }
+
+            /* ---- Step 1: on-chain transaction ---- */
+            const contractAddress = getFrontendContractAddress();
+            const signer = await getSigner();
+            const signerAddress = (await signer.getAddress()).toLowerCase();
+            const contract = await getContractWithSigner(contractAddress, bpmsContractAbi);
+
+            const tx = await contract.publishPatch(namespace, version, ipfsHash, fileHash);
+            setPublishPhase("confirming");
+
+            await tx.wait();
+
+            /* ---- Step 2: send txHash to backend — backend reads everything from chain ---- */
+            setPublishPhase("syncing");
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+            const response = await fetch(`${baseUrl}/api/publisher/publish`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-wallet-address": signerAddress,
+                },
+                body: JSON.stringify({
+                    txHash: tx.hash,
+                    targetPlatform: platform,
+                }),
+            });
+            const payload = (await response.json()) as { error?: string };
+            if (!response.ok) {
+                throw new Error(payload.error || "Backend sync failed");
+            }
+
+            setPublishPhase("done");
+            showToast("Patch published and synced successfully!", "success");
+            router.push("/publisher/patches");
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : "Publish failed", "error");
+        } finally {
+            setPublishPhase("idle");
+            setIsPublishing(false);
+        }
+    };
+
+    const statusLabel = {
+        idle: "Awaiting input",
+        signing: "Confirm in wallet…",
+        confirming: "Confirming on chain…",
+        syncing: "Syncing to backend…",
+        done: "Published!",
+    }[publishPhase];
 
     return (
         <DashboardLayout>
@@ -56,14 +141,13 @@ export default function PublisherPublish() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-                    {/* Submission Form */}
                     <Card title="Publishing Terminal" subtitle="All fields are required for cryptographic verification.">
                         <div className="space-y-6 pt-4">
                             <FormInput
                                 label="Software Namespace"
                                 placeholder="e.g. VSCode-OSX-Arm64"
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                value={formData.namespace}
+                                onChange={(e) => setFormData({ ...formData, namespace: e.target.value })}
                             />
 
                             <div className="grid grid-cols-2 gap-6">
@@ -75,26 +159,47 @@ export default function PublisherPublish() {
                                 />
                                 <div className="space-y-2">
                                     <label className="text-sm font-semibold text-slate-400 ml-1">Target Platform</label>
-                                    <select className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 appearance-none text-sm font-bold uppercase tracking-widest">
-                                        <option>macOS ARM64</option>
-                                        <option>macOS Intel</option>
-                                        <option>Windows x64</option>
-                                        <option>Linux ARM64</option>
+                                    <select
+                                        value={formData.platform}
+                                        onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
+                                        className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 appearance-none text-sm font-bold uppercase tracking-widest"
+                                    >
+                                        <option value="">Select platform</option>
+                                        <option value="windows">windows</option>
+                                        <option value="linux">linux</option>
+                                        <option value="arm64">arm64</option>
+                                        <option value="drone-os">drone-os</option>
                                     </select>
                                 </div>
                             </div>
 
                             <div className="space-y-6 pt-4 border-t border-white/5">
                                 <div className="space-y-2">
+                                    <label className="text-sm font-semibold text-slate-400 ml-1">Patch File Upload</label>
+                                    <input
+                                        type="file"
+                                        onChange={(e) => setPatchFile(e.target.files?.[0] || null)}
+                                        className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-white text-xs"
+                                    />
+                                    <Button
+                                        onClick={() => void handleUpload()}
+                                        isLoading={isUploading}
+                                        disabled={!patchFile}
+                                        className="w-full rounded-xl"
+                                    >
+                                        Upload and Generate IPFS + SHA256
+                                    </Button>
+                                </div>
+                                <div className="space-y-2">
                                     <label className="text-sm font-semibold text-slate-400 ml-1 flex items-center gap-2">
                                         <Database size={16} className="text-blue-500/60" />
                                         IPFS Gateway Hash (CID)
                                     </label>
                                     <input
+                                        readOnly
                                         className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-slate-700 font-mono text-xs focus:outline-none transition-all"
                                         placeholder="QmYxpizjUMmEc2D22m5BAbC...1234"
                                         value={formData.ipfs}
-                                        onChange={(e) => setFormData({ ...formData, ipfs: e.target.value })}
                                     />
                                 </div>
 
@@ -104,10 +209,10 @@ export default function PublisherPublish() {
                                         Build Integrity Hash (SHA-256)
                                     </label>
                                     <input
+                                        readOnly
                                         className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-slate-700 font-mono text-xs focus:outline-none transition-all"
                                         placeholder="0x9a8f...2e3cBA49...771B"
                                         value={formData.fileHash}
-                                        onChange={(e) => setFormData({ ...formData, fileHash: e.target.value })}
                                     />
                                 </div>
                             </div>
@@ -115,10 +220,10 @@ export default function PublisherPublish() {
                             <div className="pt-8 flex gap-4">
                                 <Button variant="ghost" className="flex-1 rounded-xl py-6 font-bold" onClick={() => router.back()}>Cancel Operation</Button>
                                 <Button
-                                    className="flex-[2] rounded-xl py-6 font-black uppercase tracking-widest shadow-xl shadow-emerald-500/10"
+                                    className="flex-2 rounded-xl py-6 font-black uppercase tracking-widest shadow-xl shadow-emerald-500/10"
                                     isLoading={isPublishing}
                                     onClick={handlePublish}
-                                    disabled={!formData.name || !formData.version}
+                                    disabled={!formData.namespace || !formData.version || !formData.platform || !formData.ipfs || !formData.fileHash}
                                 >
                                     Commit to Network
                                 </Button>
@@ -126,10 +231,8 @@ export default function PublisherPublish() {
                         </div>
                     </Card>
 
-                    {/* Live Preview Card */}
                     <div className="space-y-6 sticky top-28">
                         <div className="glass p-8 rounded-3xl border border-white/5 shadow-2xl relative overflow-hidden group">
-                            {/* Visual Glow */}
                             <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-3xl rounded-full" />
 
                             <div className="flex justify-between items-start mb-10">
@@ -145,11 +248,11 @@ export default function PublisherPublish() {
                             <div className="space-y-8">
                                 <div className="space-y-2">
                                     <h3 className="text-3xl font-black text-white tracking-tighter">
-                                        {formData.name || "Software Name"}
+                                        {formData.namespace || "Software Namespace"}
                                     </h3>
                                     <div className="flex items-center gap-3">
                                         <Badge variant="success">Build V{formData.version || "0.0.0"}</Badge>
-                                        <Badge variant="info">macOS-ARM64</Badge>
+                                        <Badge variant="info">{(formData.platform || "platform").toUpperCase()}</Badge>
                                     </div>
                                 </div>
 
@@ -166,11 +269,11 @@ export default function PublisherPublish() {
 
                                 <div className="p-4 bg-slate-900 border border-white/5 rounded-2xl flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                        <Loader2 size={16} className={`text-emerald-500 ${isPublishing ? "animate-spin" : "opacity-20"}`} />
+                                        <Loader2 size={16} className={`text-emerald-500 ${publishPhase !== "idle" ? "animate-spin" : "opacity-20"}`} />
                                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Status</span>
                                     </div>
                                     <span className="text-xs font-bold text-emerald-500 uppercase tracking-tight">
-                                        {isPublishing ? "Broadcasting..." : "Awaiting Signature"}
+                                        {statusLabel}
                                     </span>
                                 </div>
                             </div>
