@@ -262,10 +262,10 @@ export default function AdminRequestsPage() {
     <DashboardLayout>
       <div className="flex flex-col gap-8">
         <div className="space-y-2">
-          <h1 className="text-4xl font-black text-white leading-tight tracking-tight">
+          <h1 className="text-4xl font-black text-[#1A1A1A] leading-tight tracking-tight">
             Access Requests
           </h1>
-          <p className="text-slate-400 font-medium">
+          <p className="text-[#1A1A1A]/70 font-medium">
             Review publisher and device requests, approve on-chain first, then sync. History below is loaded from the
             database.
           </p>
@@ -273,10 +273,10 @@ export default function AdminRequestsPage() {
 
         <Card title="Pending" subtitle="Awaiting admin decision">
           {isLoading ? (
-            <p className="text-slate-400">Loading requests…</p>
+            <p className="text-[#1A1A1A]/70">Loading requests…</p>
           ) : pendingRequests.length === 0 ? (
-            <div className="flex items-center gap-3 text-slate-400">
-              <CheckCircle2 size={18} className="text-emerald-500" />
+            <div className="flex items-center gap-3 text-[#1A1A1A]/70">
+              <CheckCircle2 size={18} className="text-[#1A1A1A]" />
               <span>No pending access requests.</span>
             </div>
           ) : (
@@ -284,7 +284,7 @@ export default function AdminRequestsPage() {
               {pendingRequests.map((request) => (
                 <div
                   key={request._id}
-                  className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl border border-white/5 bg-slate-900/40"
+                  className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl border border-[#1A1A1A]/5 bg-white/40"
                 >
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -295,11 +295,11 @@ export default function AdminRequestsPage() {
                       <Badge variant={request.requestedRole === "publisher" ? "info" : "warning"}>
                         {request.requestedRole === "publisher" ? "Publisher" : "Device"}
                       </Badge>
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-[#1A1A1A]/50">
                         Requested {formatWhen(request.createdAt)}
                       </span>
                     </div>
-                    <p className="text-slate-200 font-mono break-all">{request.walletAddress}</p>
+                    <p className="text-[#1A1A1A]/90 font-mono break-all">{request.walletAddress}</p>
                   </div>
                   <div className="flex gap-3">
                     <Button
@@ -328,14 +328,14 @@ export default function AdminRequestsPage() {
         <Card title="Approved" subtitle="On-chain authorization recorded; publisher access can be revoked below">
           <div className="space-y-3">
             {isLoading ? (
-              <p className="text-slate-500 text-sm">Loading…</p>
+              <p className="text-[#1A1A1A]/50 text-sm">Loading…</p>
             ) : approvedRequests.length === 0 ? (
-              <p className="text-slate-500 text-sm">No approved requests in history yet.</p>
+              <p className="text-[#1A1A1A]/50 text-sm">No approved requests in history yet.</p>
             ) : (
               approvedRequests.map((request) => (
                 <div
                   key={request._id}
-                  className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5"
+                  className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl border border-[#1A1A1A]/10 bg-[#A9FD5F]/30"
                 >
                   <div className="space-y-2 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -343,13 +343,13 @@ export default function AdminRequestsPage() {
                       <Badge variant={request.requestedRole === "publisher" ? "info" : "warning"}>
                         {request.requestedRole === "publisher" ? "Publisher" : "Device"}
                       </Badge>
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-[#1A1A1A]/50">
                         {formatWhen(request.reviewedAt || request.updatedAt)}
                       </span>
                     </div>
-                    <p className="text-emerald-200 font-mono break-all">{request.walletAddress}</p>
+                    <p className="text-green-900 font-mono break-all">{request.walletAddress}</p>
                     {request.reviewedBy ? (
-                      <p className="text-xs text-slate-500 font-mono">
+                      <p className="text-xs text-[#1A1A1A]/50 font-mono">
                         Reviewer: {request.reviewedBy}
                       </p>
                     ) : null}
@@ -386,9 +386,9 @@ export default function AdminRequestsPage() {
         <Card title="Rejected" subtitle="Declined requests (audit trail)">
           <div className="space-y-3">
             {isLoading ? (
-              <p className="text-slate-500 text-sm">Loading…</p>
+              <p className="text-[#1A1A1A]/50 text-sm">Loading…</p>
             ) : rejectedRequests.length === 0 ? (
-              <p className="text-slate-500 text-sm">No rejected requests in history yet.</p>
+              <p className="text-[#1A1A1A]/50 text-sm">No rejected requests in history yet.</p>
             ) : (
               rejectedRequests.map((request) => (
                 <div
@@ -400,13 +400,13 @@ export default function AdminRequestsPage() {
                     <Badge variant={request.requestedRole === "publisher" ? "info" : "warning"}>
                       {request.requestedRole === "publisher" ? "Publisher" : "Device"}
                     </Badge>
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-[#1A1A1A]/50">
                       {formatWhen(request.reviewedAt || request.updatedAt)}
                     </span>
                   </div>
-                  <p className="text-rose-200 font-mono break-all">{request.walletAddress}</p>
+                  <p className="text-red-900 font-mono break-all">{request.walletAddress}</p>
                   {request.reviewedBy ? (
-                    <p className="text-xs text-slate-500 font-mono">Reviewer: {request.reviewedBy}</p>
+                    <p className="text-xs text-[#1A1A1A]/50 font-mono">Reviewer: {request.reviewedBy}</p>
                   ) : null}
                 </div>
               ))

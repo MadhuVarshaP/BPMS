@@ -3,13 +3,14 @@
 import React, { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card } from "@/components/Cards";
-import { Button } from "@/components/UI";
+import { Badge, Button } from "@/components/UI";
 import {
-    Zap,
     CheckCircle2,
     XCircle,
     Loader2,
-    Database
+    Database,
+    RefreshCw,
+    Package
 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { apiGet } from "@/lib/api";
@@ -21,125 +22,122 @@ type Log = {
     timestamp: string;
 };
 
+type Stats = {
+    successLogs: number;
+    failureLogs: number;
+    successRate: number;
+    updatesAvailable: number;
+    activePatchesOnRegistry: number;
+};
+
 export default function DeviceSync() {
     const { address } = useWallet();
-    const [isSyncing, setIsSyncing] = useState(false);
+    const [loading, setLoading] = useState(false);
     const [myLogs, setMyLogs] = useState<Log[]>([]);
+    const [stats, setStats] = useState<Stats | null>(null);
 
-    const handleSync = () => {
-        setIsSyncing(true);
-        setTimeout(() => setIsSyncing(false), 3000);
-    };
+    async function refresh() {
+        if (!address) return;
+        setLoading(true);
+        try {
+            const [logData, statsData] = await Promise.all([
+                apiGet("/api/device/history", address),
+                apiGet("/api/device/stats", address),
+            ]);
+            setMyLogs(((logData as { logs?: Log[] }).logs || []).slice(0, 10));
+            setStats((statsData as Stats) || null);
+        } finally {
+            setLoading(false);
+        }
+    }
 
     useEffect(() => {
-        if (!address) return;
-        let cancelled = false;
-        async function load() {
-            const data = await apiGet("/api/device/logs", address);
-            if (!cancelled) setMyLogs(((data as { logs?: Log[] }).logs || []).slice(0, 10));
-        }
-        void load();
-        return () => { cancelled = true; };
-    }, [address, isSyncing]);
+        void refresh();
+    }, [address]);
 
     return (
         <DashboardLayout>
             <div className="flex flex-col gap-8">
-                <div className="flex flex-col gap-2">
-                    <h1 className="text-4xl font-black text-white leading-tight tracking-tight tracking-tighter">Synchronization Protocol</h1>
-                    <p className="text-slate-400 font-medium font-inter">
-                        For the full agent flow (check → IPFS → SHA-256 vs chain → install → report), use the{" "}
-                        <span className="text-emerald-400">Device dashboard</span>. This page shows a live activity timeline.
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                    <div className="flex flex-col gap-2">
+                    <h1 className="text-4xl font-black text-[#1A1A1A] leading-tight tracking-tighter">Synchronization Timeline</h1>
+                    <p className="text-[#1A1A1A]/70 font-medium font-inter">
+                        Real data mirror from backend history/stats endpoints used by the dashboard.
                     </p>
+                    </div>
+                    <Button onClick={() => void refresh()} isLoading={loading} className="gap-2">
+                        <RefreshCw size={16} />
+                        Refresh sync data
+                    </Button>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-                    {/* Live Sync Status Card */}
-                    <Card title="Pulse Monitoring" subtitle="Network heartbeat and block verification.">
-                        <div className="space-y-10 pt-4">
-                            <div className="flex flex-col items-center justify-center py-12 relative">
-                                {/* Visual Pulse Animation */}
-                                <div className="absolute inset-x-0 top-1/2 h-px bg-gradient-to-r from-transparent via-emerald-500/30 to-transparent" />
-                                <div className={`p-8 rounded-[40px] bg-slate-900 border border-emerald-500/20 shadow-2xl transition-all duration-700 ${isSyncing ? "scale-110 shadow-emerald-500/20 border-emerald-500/50" : ""}`}>
-                                    <Zap size={64} className={`text-emerald-500 transition-all ${isSyncing ? "animate-pulse" : "opacity-40"}`} />
-                                </div>
-
-                                <div className="mt-10 text-center space-y-3">
-                                    <h3 className="text-3xl font-black text-white tracking-tighter">
-                                        {isSyncing ? "Synchronizing Artifacts" : "Operational & Secure"}
-                                    </h3>
-                                    <p className="text-xs text-slate-500 font-bold uppercase tracking-[0.2em] px-4 py-1.5 bg-slate-900 border border-white/5 rounded-full mx-auto w-fit">
-                                        Lat: 14.2ms | Peer: 0x8932...C921
-                                    </p>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                    <Card title="Sync Snapshot" subtitle="Calculated by backend">
+                        <div className="space-y-3 pt-2 text-sm">
+                            <div className="p-3 rounded-lg bg-white border border-[#1A1A1A]/10 flex items-center justify-between">
+                                <span className="text-[#1A1A1A]/70">Registry patches</span>
+                                <div className="flex items-center gap-2">
+                                    <Package size={14} className="text-blue-400" />
+                                    <span className="font-bold text-[#1A1A1A]">{stats?.activePatchesOnRegistry ?? 0}</span>
                                 </div>
                             </div>
-
-                            <div className="pt-6 border-t border-white/5 grid grid-cols-2 gap-4">
-                                <Button
-                                    onClick={handleSync}
-                                    isLoading={isSyncing}
-                                    className="rounded-xl py-6 font-black uppercase tracking-widest bg-emerald-600 hover:bg-emerald-500 shadow-xl shadow-emerald-500/20"
-                                >
-                                    Initialize Pull
-                                </Button>
-                                <Button variant="outline" className="rounded-xl py-6 font-black uppercase tracking-widest border-white/10 text-slate-400">
-                                    Force Verify Hash
-                                </Button>
+                            <div className="p-3 rounded-lg bg-white border border-[#1A1A1A]/10 flex items-center justify-between">
+                                <span className="text-[#1A1A1A]/70">Updates available</span>
+                                <Badge variant="warning">{stats?.updatesAvailable ?? 0}</Badge>
+                            </div>
+                            <div className="p-3 rounded-lg bg-white border border-[#1A1A1A]/10 flex items-center justify-between">
+                                <span className="text-[#1A1A1A]/70">Success rate</span>
+                                <Badge variant="success">{stats?.successRate ?? 0}%</Badge>
+                            </div>
+                            <div className="p-3 rounded-lg bg-white border border-[#1A1A1A]/10 flex items-center justify-between">
+                                <span className="text-[#1A1A1A]/70">Failures</span>
+                                <Badge variant={(stats?.failureLogs ?? 0) > 0 ? "error" : "neutral"}>
+                                    {stats?.failureLogs ?? 0}
+                                </Badge>
                             </div>
                         </div>
                     </Card>
 
-                    {/* Detailed Sync Timeline */}
-                    <div className="space-y-6">
-                        <Card title="Activity Progression" className="h-full">
-                            <div className="space-y-3 relative before:absolute before:inset-y-0 before:left-3 before:w-px before:bg-white/5">
-                                {isSyncing ? (
+                    <div className="space-y-6 lg:col-span-2">
+                        <Card title="Activity Progression" subtitle="From /api/device/history" className="h-full">
+                            <div className="space-y-3 relative before:absolute before:inset-y-0 before:left-3 before:w-px before:bg-[#1A1A1A]/5">
+                                {loading ? (
+                                    <div className="py-8 flex items-center gap-2 text-[#1A1A1A]/50">
+                                        <Loader2 size={16} className="animate-spin" /> Loading history...
+                                    </div>
+                                ) : myLogs.length > 0 ? (
                                     <div className="space-y-6">
-                                        {[
-                                            { status: "Processing", label: "Resolving IPFS Gateway", active: true },
-                                            { status: "Waiting", label: "Verifying Merkle Roots", active: false },
-                                            { status: "Waiting", label: "Validating Distributor Signature", active: false },
-                                        ].map((step, i) => (
-                                            <div key={i} className="flex gap-6 relative animate-fade-in" style={{ animationDelay: `${i * 200}ms` }}>
-                                                <div className={`w-6 h-6 rounded-full border-2 border-slate-900 flex items-center justify-center z-10 ${step.active ? "bg-emerald-500" : "bg-slate-800"}`}>
-                                                    {step.active ? <Loader2 size={12} className="text-white animate-spin" /> : <div className="h-1 w-1 bg-slate-500 rounded-full" />}
+                                        {myLogs.slice(0, 8).map((log) => (
+                                            <div key={log._id} className="flex gap-6 relative group">
+                                                <div className={`w-6 h-6 rounded-full border-2 border-slate-900 flex items-center justify-center z-10 ${log.status === "success" ? "bg-emerald-500" : "bg-rose-500"}`}>
+                                                    {log.status === "success" ? <CheckCircle2 size={12} className="text-[#1A1A1A]" /> : <XCircle size={12} className="text-[#1A1A1A]" />}
                                                 </div>
-                                                <div className="flex-1">
-                                                    <p className={`text-xs font-bold uppercase tracking-widest ${step.active ? "text-emerald-500" : "text-slate-500"}`}>{step.label}</p>
-                                                    <p className="text-[10px] text-slate-600 font-bold uppercase tracking-widest mt-1">{step.status}</p>
+                                                <div className="flex-1 group-hover:pl-2 transition-all">
+                                                    <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest">
+                                                        <span className="text-[#1A1A1A] tracking-tight">Patch #P00{log.patchId} Sync</span>
+                                                        <span className="text-[10px] text-slate-600 font-mono">{new Date(log.timestamp).toLocaleString()}</span>
+                                                    </div>
+                                                    <p className="text-[10px] text-[#1A1A1A]/50 font-bold uppercase tracking-widest mt-1">Status: {log.status.toUpperCase()}</p>
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
                                 ) : (
-                                    <div className="space-y-6">
-                                        {myLogs.slice(0, 4).map((log) => (
-                                            <div key={log._id} className="flex gap-6 relative group">
-                                                <div className={`w-6 h-6 rounded-full border-2 border-slate-900 flex items-center justify-center z-10 ${log.status === "success" ? "bg-emerald-500" : "bg-rose-500"}`}>
-                                                    {log.status === "success" ? <CheckCircle2 size={12} className="text-white" /> : <XCircle size={12} className="text-white" />}
-                                                </div>
-                                                <div className="flex-1 group-hover:pl-2 transition-all">
-                                                    <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest">
-                                                        <span className="text-white tracking-tight">Patch #P00{log.patchId} Sync</span>
-                                                        <span className="text-[10px] text-slate-600 font-mono">{new Date(log.timestamp).toLocaleString()}</span>
-                                                    </div>
-                                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Status: {log.status.toUpperCase()}</p>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                    <p className="text-sm text-[#1A1A1A]/50 py-8">No installation history yet.</p>
                                 )}
                             </div>
                         </Card>
 
-                        <div className="glass-dark p-6 rounded-2xl border border-white/5 space-y-4">
+                        <div className="glass-dark p-6 rounded-2xl border border-[#1A1A1A]/5 space-y-4">
                             <div className="flex items-start gap-4">
                                 <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500">
                                     <Database size={20} />
                                 </div>
                                 <div>
-                                    <h4 className="text-xs font-bold text-white tracking-widest uppercase mb-1">Decentralized Storage</h4>
-                                    <p className="text-[10px] font-medium text-slate-500 leading-relaxed font-inter">Connected to IPFS multi-address. Data availability verification: PASSED.</p>
+                                    <h4 className="text-xs font-bold text-[#1A1A1A] tracking-widest uppercase mb-1">Decentralized Storage</h4>
+                                    <p className="text-[10px] font-medium text-[#1A1A1A]/50 leading-relaxed font-inter">
+                                        Dashboard and sync now use the same real backend sources for consistency.
+                                    </p>
                                 </div>
                             </div>
                         </div>

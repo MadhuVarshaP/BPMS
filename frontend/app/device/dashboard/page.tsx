@@ -15,7 +15,9 @@ import {
     Activity,
     CheckCircle2,
     XCircle,
-    Loader2
+    Loader2,
+    RefreshCw,
+    SlidersHorizontal
 } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { useToast } from "@/context/ToastContext";
@@ -23,6 +25,7 @@ import { apiGet, apiPost, apiPatch } from "@/lib/api";
 import { bpmsContractAbi } from "@/lib/contractAbi";
 import { getContractWithSigner, getFrontendContractAddress } from "@/lib/ethers";
 import { normalizeHash, sha256OfBuffer } from "@/lib/patchIntegrity";
+import { isVersionNewer } from "@/lib/versionCompare";
 
 type DeviceRow = {
     deviceId: string;
@@ -42,6 +45,7 @@ type PatchRec = {
     targetPlatform?: string;
     ipfsHash: string;
     fileHash: string;
+    active?: boolean;
 };
 
 type LogRow = {
@@ -82,6 +86,18 @@ const PHASE_PROGRESS: Record<InstallPhase, number> = {
     error: 0
 };
 
+function triggerBrowserDownload(bytes: ArrayBuffer, filename: string, mimeType = "application/zip") {
+    const blob = new Blob([bytes], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
 function findPatchInstalledLogIndex(
     contract: { interface: { parseLog: (log: { topics: string[]; data: string }) => { name?: string } | null } },
     receipt: { logs?: ReadonlyArray<{ address: string; topics: readonly string[]; data: string; index: number }> },
@@ -104,6 +120,17 @@ function findPatchInstalledLogIndex(
     return undefined;
 }
 
+function matchesProfile(patch: PatchRec, device: DeviceRow | null) {
+    if (!device) return true;
+    const ns = String(device.currentSoftwareNamespace || "").trim();
+    const currentVer = String(device.currentVersion || "").trim();
+    const targetPlatform = String(device.targetPlatform || "").trim().toLowerCase();
+    const patchPlatform = String(patch.targetPlatform || "").trim().toLowerCase();
+    if (ns && patch.softwareName !== ns) return false;
+    if (targetPlatform && patchPlatform && patchPlatform !== targetPlatform) return false;
+    return isVersionNewer(patch.version, currentVer);
+}
+
 export default function DeviceDashboard() {
     const { address } = useWallet();
     const { showToast } = useToast();
@@ -120,15 +147,23 @@ export default function DeviceDashboard() {
     const [logs, setLogs] = useState<LogRow[]>([]);
     const [upToDate, setUpToDate] = useState(true);
     const [recommended, setRecommended] = useState<PatchRec | null>(null);
+    const [availableUpdates, setAvailableUpdates] = useState<PatchRec[]>([]);
+    const [allPatches, setAllPatches] = useState<PatchRec[]>([]);
+    const [showAllPatches, setShowAllPatches] = useState(false);
+    const [filterSoftware, setFilterSoftware] = useState("");
+    const [filterPlatform, setFilterPlatform] = useState("");
     const [updateHint, setUpdateHint] = useState<string | null>(null);
     const [checking, setChecking] = useState(false);
 
     const [phase, setPhase] = useState<InstallPhase>("idle");
     const [phaseMessage, setPhaseMessage] = useState("");
     const [installing, setInstalling] = useState(false);
+    const [installingPatchId, setInstallingPatchId] = useState<number | null>(null);
+    const [failedPatchId, setFailedPatchId] = useState<number | null>(null);
 
     const loadAll = useCallback(async () => {
         if (!address) return;
+        let loadedDevice: DeviceRow | null = null;
         try {
             const me = await apiGet("/api/device/me", address).catch(() => null) as
                 | { device?: DeviceRow }
@@ -139,6 +174,7 @@ export default function DeviceDashboard() {
             } else {
                 setDeviceMissing(false);
                 setDevice(me.device);
+                loadedDevice = me.device;
                 setProfileNs(me.device.currentSoftwareNamespace || "");
                 setProfileVer(me.device.currentVersion || "");
                 setProfilePlat(me.device.targetPlatform || "");
@@ -149,13 +185,11 @@ export default function DeviceDashboard() {
         }
 
         try {
-            const [statsRes, logsRes, checkRes] = await Promise.all([
+            const [statsRes, logsRes, checkRes, patchesRes] = await Promise.all([
                 apiGet("/api/device/stats", address),
-                apiGet("/api/device/logs", address),
-                apiGet("/api/device/update-check", address).catch(() => ({
-                    upToDate: true,
-                    recommendedPatch: null
-                }))
+                apiGet("/api/device/history", address),
+                apiGet("/api/device/update-check", address).catch(() => ({ upToDate: true, recommendedPatch: null })),
+                apiGet("/api/device/patches", address).catch(() => ({ patches: [] }))
             ]);
             setStats(statsRes as Stats);
             setLogs(((logsRes as { logs?: LogRow[] }).logs || []).slice(0, 12));
@@ -167,6 +201,12 @@ export default function DeviceDashboard() {
             setUpToDate(Boolean(chk.upToDate));
             setRecommended(chk.recommendedPatch || null);
             setUpdateHint(typeof chk.hint === "string" ? chk.hint : null);
+            const activePatches = ((patchesRes as { patches?: PatchRec[] }).patches || []);
+            setAllPatches(activePatches);
+            const profile = loadedDevice || null;
+            const applicable = activePatches.filter((p) => matchesProfile(p, profile));
+            applicable.sort((a, b) => (isVersionNewer(a.version, b.version) ? -1 : 1));
+            setAvailableUpdates(applicable);
         } catch {
             /* stats may fail if device record missing */
         }
@@ -222,6 +262,7 @@ export default function DeviceDashboard() {
                     "info"
                 );
             }
+            await loadAll();
         } catch (e) {
             showToast(e instanceof Error ? e.message : "Check failed", "error");
         } finally {
@@ -231,17 +272,20 @@ export default function DeviceDashboard() {
         }
     }
 
-    async function runInstallPipeline() {
-        if (!address || !recommended || deviceMissing) return;
+    async function runInstallPipeline(targetPatch?: PatchRec) {
+        const patchToInstall = targetPatch || recommended;
+        if (!address || !patchToInstall || deviceMissing) return;
         setInstalling(true);
+        setInstallingPatchId(patchToInstall.patchId);
+        setFailedPatchId(null);
         setPhase("downloading");
-        setPhaseMessage("Downloading patch from IPFS…");
+        setPhaseMessage("Downloading patch ZIP…");
         const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
         const contractAddress = getFrontendContractAddress();
 
         try {
             const dl = await fetch(
-                `${baseUrl}/api/device/patch/${recommended.patchId}/download`,
+                `${baseUrl}/api/device/patch/${patchToInstall.patchId}/download`,
                 { headers: { "x-wallet-address": address } }
             );
             if (!dl.ok) {
@@ -249,28 +293,35 @@ export default function DeviceDashboard() {
             }
             const buf = await dl.arrayBuffer();
 
+            triggerBrowserDownload(
+                buf,
+                `${patchToInstall.softwareName.replace(/[^a-z0-9._-]+/gi, "_")}-v${patchToInstall.version}.zip`
+            );
+
             setPhase("verifying");
             setPhaseMessage("Computing SHA-256 and comparing to on-chain fileHash…");
             const localHash = normalizeHash(await sha256OfBuffer(buf));
 
             const contract = await getContractWithSigner(contractAddress, bpmsContractAbi);
-            const onChain = await contract.patches(recommended.patchId);
+            const onChain = await contract.patches(patchToInstall.patchId);
             const chainHash = normalizeHash(String(onChain.fileHash));
 
             if (localHash !== chainHash) {
                 setPhase("error");
                 setPhaseMessage("Integrity check failed — hash mismatch. Update aborted.");
                 showToast("Integrity check failed. File does not match blockchain hash.", "error");
+                setFailedPatchId(patchToInstall.patchId);
                 try {
                     await apiPost(
                         "/api/device/report",
-                        { patchId: recommended.patchId, status: "failure" },
+                        { patchId: patchToInstall.patchId, status: "failure" },
                         address
                     );
                 } catch {
                     /* best-effort log */
                 }
                 setInstalling(false);
+                setInstallingPatchId(null);
                 setTimeout(() => {
                     setPhase("idle");
                     setPhaseMessage("");
@@ -284,7 +335,7 @@ export default function DeviceDashboard() {
 
             setPhase("reporting");
             setPhaseMessage("Recording installation on-chain…");
-            const tx = await contract.reportInstallation(recommended.patchId, true);
+            const tx = await contract.reportInstallation(patchToInstall.patchId, true);
             const receipt = await tx.wait();
             if (!receipt) throw new Error("No receipt from network");
 
@@ -293,7 +344,7 @@ export default function DeviceDashboard() {
             await apiPost(
                 "/api/device/report",
                 {
-                    patchId: recommended.patchId,
+                    patchId: patchToInstall.patchId,
                     status: "success",
                     txHash: tx.hash,
                     logIndex: logIndex ?? undefined
@@ -311,7 +362,9 @@ export default function DeviceDashboard() {
             setPhase("error");
             setPhaseMessage(e instanceof Error ? e.message : "Installation failed");
             showToast(e instanceof Error ? e.message : "Installation failed", "error");
+            setFailedPatchId(patchToInstall.patchId);
             setInstalling(false);
+            setInstallingPatchId(null);
             setTimeout(() => {
                 setPhase("idle");
                 setPhaseMessage("");
@@ -319,6 +372,7 @@ export default function DeviceDashboard() {
             return;
         }
         setInstalling(false);
+        setInstallingPatchId(null);
         setTimeout(() => {
             setPhase("idle");
             setPhaseMessage("");
@@ -338,12 +392,12 @@ export default function DeviceDashboard() {
                                 Patch agent
                             </Badge>
                         </div>
-                        <h1 className="text-4xl font-black text-white tracking-tight">
+                        <h1 className="text-4xl font-black text-[#1A1A1A] tracking-tight">
                             Device control panel
                         </h1>
-                        <p className="text-slate-400 font-medium max-w-xl">
+                        <p className="text-[#1A1A1A]/70 font-medium max-w-xl">
                             Check → fetch → verify (SHA-256 vs chain) → install (simulated) →
-                            <code className="text-emerald-500/90 mx-1">reportInstallation</code> → backend log.
+                            <code className="text-[#1A1A1A]/90 mx-1">reportInstallation</code> → backend log.
                         </p>
                     </div>
                 </div>
@@ -362,29 +416,29 @@ export default function DeviceDashboard() {
                         subtitle="Wallet + registration status"
                     >
                         <div className="space-y-4 pt-4">
-                            <div className="p-3 rounded-xl bg-slate-900 border border-white/5">
-                                <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">
+                            <div className="p-3 rounded-xl bg-white border border-[#1A1A1A]/5">
+                                <p className="text-[10px] uppercase font-bold text-[#1A1A1A]/50 mb-1">
                                     Wallet
                                 </p>
-                                <p className="text-xs font-mono text-emerald-400 break-all">{address}</p>
+                                <p className="text-xs font-mono text-[#1A1A1A] break-all">{address}</p>
                             </div>
                             {device && (
                                 <>
                                     <div className="grid grid-cols-2 gap-3 text-sm">
                                         <div>
-                                            <p className="text-[10px] text-slate-500 uppercase font-bold">
+                                            <p className="text-[10px] text-[#1A1A1A]/50 uppercase font-bold">
                                                 Device ID
                                             </p>
-                                            <p className="font-mono text-white">{device.deviceId}</p>
+                                            <p className="font-mono text-[#1A1A1A]">{device.deviceId}</p>
                                         </div>
                                         <div>
-                                            <p className="text-[10px] text-slate-500 uppercase font-bold">
+                                            <p className="text-[10px] text-[#1A1A1A]/50 uppercase font-bold">
                                                 Status
                                             </p>
                                             <Badge variant="success">{device.status || "registered"}</Badge>
                                         </div>
                                     </div>
-                                    <p className="text-[10px] text-slate-500">
+                                    <p className="text-[10px] text-[#1A1A1A]/50">
                                         Last seen:{" "}
                                         {device.lastSeen
                                             ? new Date(device.lastSeen).toLocaleString()
@@ -420,13 +474,13 @@ export default function DeviceDashboard() {
                                 placeholder="e.g. 1.0.5"
                             />
                             <div className="space-y-2">
-                                <label className="text-sm font-semibold text-slate-400 ml-1">
+                                <label className="text-sm font-semibold text-[#1A1A1A]/70 ml-1">
                                     Target platform
                                 </label>
                                 <select
                                     value={profilePlat}
                                     onChange={(e) => setProfilePlat(e.target.value)}
-                                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-white text-sm"
+                                    className="w-full bg-white border border-[#1A1A1A]/10 rounded-xl px-4 py-3 text-[#1A1A1A] text-sm"
                                 >
                                     <option value="">Any / not set</option>
                                     <option value="windows">windows</option>
@@ -448,34 +502,34 @@ export default function DeviceDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="p-5 rounded-xl border border-white/5 bg-slate-900/40 flex items-center gap-4">
+                    <div className="p-5 rounded-xl border border-[#1A1A1A]/5 bg-white/40 flex items-center gap-4">
                         <Cpu className="text-amber-500 shrink-0" size={28} />
                         <div>
-                            <p className="text-[10px] uppercase font-bold text-slate-500">Current version</p>
-                            <p className="text-xl font-black text-white">
+                            <p className="text-[10px] uppercase font-bold text-[#1A1A1A]/50">Current version</p>
+                            <p className="text-xl font-black text-[#1A1A1A]">
                                 {profileVer || "—"}
                             </p>
                         </div>
                     </div>
-                    <div className="p-5 rounded-xl border border-white/5 bg-slate-900/40 flex items-center gap-4">
+                    <div className="p-5 rounded-xl border border-[#1A1A1A]/5 bg-white/40 flex items-center gap-4">
                         <Package className="text-blue-500 shrink-0" size={28} />
                         <div>
-                            <p className="text-[10px] uppercase font-bold text-slate-500">Updates available</p>
-                            <p className="text-xl font-black text-white">
+                            <p className="text-[10px] uppercase font-bold text-[#1A1A1A]/50">Updates available</p>
+                            <p className="text-xl font-black text-[#1A1A1A]">
                                 {stats?.updatesAvailable ?? 0}
                             </p>
                         </div>
                     </div>
-                    <div className="p-5 rounded-xl border border-white/5 bg-slate-900/40 flex items-center gap-4">
-                        <Activity className="text-emerald-500 shrink-0" size={28} />
+                    <div className="p-5 rounded-xl border border-[#1A1A1A]/5 bg-white/40 flex items-center gap-4">
+                        <Activity className="text-[#1A1A1A] shrink-0" size={28} />
                         <div>
-                            <p className="text-[10px] uppercase font-bold text-slate-500">Last install</p>
-                            <p className="text-sm font-bold text-white">
+                            <p className="text-[10px] uppercase font-bold text-[#1A1A1A]/50">Last install</p>
+                            <p className="text-sm font-bold text-[#1A1A1A]">
                                 {lastLog
                                     ? `${lastLog.status === "success" ? "✓" : "✗"} patch #${lastLog.patchId}`
                                     : "No history"}
                             </p>
-                            <p className="text-[10px] text-slate-500 font-mono">
+                            <p className="text-[10px] text-[#1A1A1A]/50 font-mono">
                                 {lastLog ? new Date(lastLog.timestamp).toLocaleString() : ""}
                             </p>
                         </div>
@@ -505,16 +559,191 @@ export default function DeviceDashboard() {
                         </div>
 
                         {recommended && (
-                            <div className="p-4 rounded-xl border border-emerald-500/25 bg-emerald-500/5 space-y-2">
-                                <p className="text-sm font-bold text-white">
+                            <div className="p-4 rounded-xl border border-emerald-500/25 bg-[#A9FD5F]/30 space-y-2">
+                                <p className="text-sm font-bold text-[#1A1A1A]">
                                     {recommended.softwareName}{" "}
-                                    <span className="text-emerald-400">v{recommended.version}</span>
+                                    <span className="text-[#1A1A1A]">v{recommended.version}</span>
                                 </p>
-                                <p className="text-xs text-slate-500 font-mono">
+                                <p className="text-xs text-[#1A1A1A]/50 font-mono">
                                     Patch #{recommended.patchId} · IPFS {recommended.ipfsHash.slice(0, 18)}…
                                 </p>
                             </div>
                         )}
+
+                        <div className="space-y-3">
+                            <p className="text-xs uppercase tracking-widest font-bold text-[#1A1A1A]/50">
+                                Available updates
+                            </p>
+                            {availableUpdates.length === 0 ? (
+                                <p className="text-sm text-[#1A1A1A]/50">No applicable updates found.</p>
+                            ) : (
+                                availableUpdates.map((patch) => (
+                                    <div
+                                        key={patch.patchId}
+                                        className="p-3 rounded-xl border border-[#1A1A1A]/10 bg-white/40 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                                    >
+                                        <div>
+                                            <p className="text-sm font-bold text-[#1A1A1A]">
+                                                {patch.softwareName} <span className="text-[#1A1A1A]">v{patch.version}</span>
+                                            </p>
+                                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                                                <Badge variant="warning" className="text-[10px]">
+                                                    New update available
+                                                </Badge>
+                                                {patch.targetPlatform && (
+                                                    <Badge variant="neutral" className="text-[10px] font-mono">
+                                                        {patch.targetPlatform}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                            <p className="text-xs text-[#1A1A1A]/50 font-mono">
+                                                Patch #{patch.patchId} · IPFS {patch.ipfsHash.slice(0, 18)}…
+                                            </p>
+                                        </div>
+                                        <Button
+                                            onClick={() => void runInstallPipeline(patch)}
+                                            disabled={
+                                                deviceMissing ||
+                                                checking ||
+                                                (installingPatchId !== null && installingPatchId !== patch.patchId)
+                                            }
+                                            isLoading={installingPatchId === patch.patchId}
+                                            className="gap-2 bg-emerald-600 hover:bg-emerald-500 md:min-w-40"
+                                        >
+                                            <Download size={16} />
+                                            Install update
+                                        </Button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        <div className="pt-2 space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <p className="text-xs uppercase tracking-widest font-bold text-[#1A1A1A]/50 flex items-center gap-2">
+                                    <SlidersHorizontal size={14} />
+                                    Patch catalog
+                                </p>
+                                <Button
+                                    onClick={() => setShowAllPatches((v) => !v)}
+                                    className="h-8 px-3 text-xs"
+                                    disabled={deviceMissing || installing || checking}
+                                >
+                                    {showAllPatches ? "Show applicable only" : "Show all patches"}
+                                </Button>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <FormInput
+                                    label="Filter by software"
+                                    value={filterSoftware}
+                                    onChange={(e) => setFilterSoftware(e.target.value)}
+                                    placeholder="e.g. drone firmware"
+                                />
+                                <div className="space-y-2">
+                                    <label className="text-sm font-semibold text-[#1A1A1A]/70 ml-1">
+                                        Platform
+                                    </label>
+                                    <select
+                                        value={filterPlatform}
+                                        onChange={(e) => setFilterPlatform(e.target.value)}
+                                        className="w-full bg-white border border-[#1A1A1A]/10 rounded-xl px-4 py-3 text-[#1A1A1A] text-sm"
+                                    >
+                                        <option value="">Any</option>
+                                        <option value="windows">windows</option>
+                                        <option value="linux">linux</option>
+                                        <option value="arm64">arm64</option>
+                                        <option value="drone-os">drone-os</option>
+                                    </select>
+                                </div>
+                                <div className="flex items-end gap-2">
+                                    <Button
+                                        onClick={() => {
+                                            setFilterSoftware("");
+                                            setFilterPlatform("");
+                                        }}
+                                        className="h-11"
+                                        disabled={deviceMissing || installing || checking}
+                                    >
+                                        Clear filters
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {(() => {
+                                const normalizedFilterSoftware = filterSoftware.trim().toLowerCase();
+                                const normalizedFilterPlatform = filterPlatform.trim().toLowerCase();
+                                const base = showAllPatches ? allPatches : availableUpdates;
+                                const patchCatalog = base.filter((p) => {
+                                    if (normalizedFilterSoftware) {
+                                        const s = `${p.softwareName}`.toLowerCase();
+                                        if (!s.includes(normalizedFilterSoftware)) return false;
+                                    }
+                                    if (normalizedFilterPlatform) {
+                                        const pl = `${p.targetPlatform || ""}`.toLowerCase();
+                                        if (pl !== normalizedFilterPlatform) return false;
+                                    }
+                                    return true;
+                                });
+
+                                if (patchCatalog.length === 0) {
+                                    return (
+                                        <p className="text-sm text-[#1A1A1A]/50">
+                                            No patches match the current filters.
+                                        </p>
+                                    );
+                                }
+
+                                return (
+                                    <div className="space-y-2">
+                                        {patchCatalog.map((patch) => (
+                                            <div
+                                                key={`catalog-${patch.patchId}`}
+                                                className="p-3 rounded-xl border border-[#1A1A1A]/10 bg-slate-950/40 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                                            >
+                                                <div>
+                                                    <p className="text-sm font-bold text-[#1A1A1A]">
+                                                        {patch.softwareName}{" "}
+                                                        <span className="text-[#1A1A1A]">v{patch.version}</span>
+                                                    </p>
+                                                    <p className="text-xs text-[#1A1A1A]/50 font-mono">
+                                                        Patch #{patch.patchId}
+                                                        {patch.targetPlatform ? ` · ${patch.targetPlatform}` : ""} · IPFS{" "}
+                                                        {patch.ipfsHash.slice(0, 18)}…
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Button
+                                                        onClick={() => void runInstallPipeline(patch)}
+                                                        disabled={
+                                                            deviceMissing ||
+                                                            checking ||
+                                                            (installingPatchId !== null &&
+                                                                installingPatchId !== patch.patchId)
+                                                        }
+                                                        isLoading={installingPatchId === patch.patchId}
+                                                        className="gap-2 bg-emerald-600 hover:bg-emerald-500 md:min-w-40"
+                                                    >
+                                                        <Download size={16} />
+                                                        Install
+                                                    </Button>
+                                                    {failedPatchId === patch.patchId && (
+                                                        <Button
+                                                            onClick={() => void runInstallPipeline(patch)}
+                                                            disabled={deviceMissing || checking || installingPatchId !== null}
+                                                            className="gap-2"
+                                                        >
+                                                            <RefreshCw size={16} />
+                                                            Retry
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
+                        </div>
 
                         <div className="flex flex-wrap gap-3">
                             <Button
@@ -526,24 +755,15 @@ export default function DeviceDashboard() {
                                 <Fingerprint size={18} />
                                 Check for updates
                             </Button>
-                            <Button
-                                onClick={() => void runInstallPipeline()}
-                                disabled={deviceMissing || !recommended || installing || checking}
-                                isLoading={installing}
-                                className="gap-2 bg-emerald-600 hover:bg-emerald-500"
-                            >
-                                <Download size={18} />
-                                Install update
-                            </Button>
                         </div>
 
                         {(installing || phase !== "idle") && phase !== "checking" && (
                             <div className="space-y-2 pt-2">
-                                <div className="flex justify-between text-[10px] uppercase font-bold text-slate-500">
+                                <div className="flex justify-between text-[10px] uppercase font-bold text-[#1A1A1A]/50">
                                     <span>Progress</span>
                                     <span>{phase}</span>
                                 </div>
-                                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                <div className="h-2 bg-[#EDEDED] rounded-full overflow-hidden">
                                     <div
                                         className={`h-full transition-all duration-500 ${
                                             phase === "error" ? "bg-rose-500" : "bg-emerald-500"
@@ -551,9 +771,9 @@ export default function DeviceDashboard() {
                                         style={{ width: `${progress}%` }}
                                     />
                                 </div>
-                                <p className="text-xs text-slate-400 flex items-center gap-2">
+                                <p className="text-xs text-[#1A1A1A]/70 flex items-center gap-2">
                                     {installing && phase !== "error" && phase !== "success" && (
-                                        <Loader2 size={14} className="animate-spin text-emerald-500" />
+                                        <Loader2 size={14} className="animate-spin text-[#1A1A1A]" />
                                     )}
                                     {phaseMessage}
                                 </p>
@@ -566,7 +786,7 @@ export default function DeviceDashboard() {
                     <div className="overflow-x-auto pt-2">
                         <table className="w-full text-sm">
                             <thead>
-                                <tr className="text-left text-[10px] uppercase text-slate-500 border-b border-white/5">
+                                <tr className="text-left text-[10px] uppercase text-[#1A1A1A]/50 border-b border-[#1A1A1A]/5">
                                     <th className="pb-2 pr-4">Patch</th>
                                     <th className="pb-2 pr-4">Version</th>
                                     <th className="pb-2 pr-4">Status</th>
@@ -575,14 +795,14 @@ export default function DeviceDashboard() {
                             </thead>
                             <tbody>
                                 {logs.map((log) => (
-                                    <tr key={log._id} className="border-b border-white/5">
-                                        <td className="py-3 font-mono text-emerald-400">
+                                    <tr key={log._id} className="border-b border-[#1A1A1A]/5">
+                                        <td className="py-3 font-mono text-[#1A1A1A]">
                                             #{log.patchId}
                                         </td>
-                                        <td className="py-3 text-slate-400">—</td>
+                                        <td className="py-3 text-[#1A1A1A]/70">—</td>
                                         <td className="py-3">
                                             {log.status === "success" ? (
-                                                <span className="text-emerald-400 flex items-center gap-1">
+                                                <span className="text-[#1A1A1A] flex items-center gap-1">
                                                     <ShieldCheck size={14} /> Success
                                                 </span>
                                             ) : (
@@ -591,7 +811,7 @@ export default function DeviceDashboard() {
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="py-3 text-xs text-slate-500 font-mono">
+                                        <td className="py-3 text-xs text-[#1A1A1A]/50 font-mono">
                                             {new Date(log.timestamp).toLocaleString()}
                                         </td>
                                     </tr>
@@ -599,7 +819,7 @@ export default function DeviceDashboard() {
                             </tbody>
                         </table>
                         {logs.length === 0 && (
-                            <p className="text-center text-slate-500 text-sm py-8">
+                            <p className="text-center text-[#1A1A1A]/50 text-sm py-8">
                                 No installation events yet.
                             </p>
                         )}

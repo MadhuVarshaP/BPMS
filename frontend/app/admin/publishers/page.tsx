@@ -141,8 +141,8 @@ export default function AdminPublishers() {
             <div className="flex flex-col gap-8">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                     <div className="space-y-2">
-                        <h1 className="text-4xl font-black text-white leading-tight tracking-tight">Publisher Network</h1>
-                        <p className="text-slate-400 font-medium">Authorize developers and distribute patches through cryptographical identities.</p>
+                        <h1 className="text-4xl font-black text-[#1A1A1A] leading-tight tracking-tight">Publisher Network</h1>
+                        <p className="text-[#1A1A1A]/70 font-medium">Authorize developers and distribute patches through cryptographical identities.</p>
                     </div>
                     <div className="flex gap-4">
                         <Button onClick={() => setIsModalOpen(true)} className="px-6 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-emerald-500/10">
@@ -167,17 +167,17 @@ export default function AdminPublishers() {
                             <tbody>
                                 {isLoading ? (
                                     <tr>
-                                        <td colSpan={5} className="text-slate-400">Loading publishers...</td>
+                                        <td colSpan={5} className="text-[#1A1A1A]/70">Loading publishers...</td>
                                     </tr>
                                 ) : publishers.length === 0 ? (
                                     <tr>
-                                        <td colSpan={5} className="text-slate-400">No authorized publishers found.</td>
+                                        <td colSpan={5} className="text-[#1A1A1A]/70">No authorized publishers found.</td>
                                     </tr>
                                 ) : publishers.map((pub) => (
                                     <tr key={pub.walletAddress} className="group hover:bg-white/1">
-                                        <td className="font-mono text-slate-300 text-sm">
+                                        <td className="font-mono text-[#1A1A1A]/80 text-sm">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-500 group-hover:bg-blue-500/10 group-hover:text-blue-500 transition-all">
+                                                <div className="w-10 h-10 rounded-xl bg-[#EDEDED] flex items-center justify-center text-[#1A1A1A]/50 group-hover:bg-blue-500/10 group-hover:text-blue-500 transition-all">
                                                     <ShieldCheck size={18} />
                                                 </div>
                                                 <span className="font-semibold tracking-tight">
@@ -185,7 +185,7 @@ export default function AdminPublishers() {
                                                 </span>
                                             </div>
                                         </td>
-                                        <td className="text-sm font-bold text-slate-300 uppercase">
+                                        <td className="text-sm font-bold text-[#1A1A1A]/80 uppercase">
                                             {pub.role}
                                         </td>
                                         <td>
@@ -193,7 +193,7 @@ export default function AdminPublishers() {
                                                 {pub.status === "active" ? "authorized" : pub.status}
                                             </Badge>
                                         </td>
-                                        <td className="text-xs text-slate-400">
+                                        <td className="text-xs text-[#1A1A1A]/70">
                                             {new Date(pub.createdAt).toLocaleDateString()}
                                         </td>
                                         <td className="text-right">
@@ -234,7 +234,7 @@ export default function AdminPublishers() {
                     }
                 >
                     <div className="space-y-6">
-                        <p className="text-slate-400 text-sm leading-relaxed">
+                        <p className="text-[#1A1A1A]/70 text-sm leading-relaxed">
                             Grant patch-publishing permissions to a new entity. They will be able to upload, sign, and distribute software updates to authorized endpoints.
                         </p>
                         <FormInput

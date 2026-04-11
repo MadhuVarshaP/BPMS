@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Outfit } from "next/font/google";
+import { Inter, Outfit, DM_Sans } from "next/font/google";
 import "./globals.css";
 import "@rainbow-me/rainbowkit/styles.css";
 import { WalletProvider } from "@/context/WalletContext";
@@ -16,6 +16,11 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
   title: "BPMS | Blockchain-Based Patch Management System",
   description: "Secure, decentralized patch management for enterprise-grade software distribution.",
@@ -27,8 +32,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${outfit.variable} ${inter.variable} antialiased selection:bg-emerald-500/30`}>
+    <html lang="en" className="">
+      <body className={`${outfit.variable} ${inter.variable} ${dmSans.variable} font-dm-sans antialiased selection:bg-[#1A1A1A] selection:text-[#A9FD5F]`}>
         <Web3Provider>
           <ToastProvider>
             <WalletProvider>

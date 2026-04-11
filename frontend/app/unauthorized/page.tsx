@@ -40,7 +40,7 @@ export default function UnauthorizedPage() {
     }
 
     return (
-        <div className="min-h-screen bg-[#020617] flex items-center justify-center p-6 selection:bg-rose-500/30">
+        <div className="min-h-screen bg-[#EDEDED] flex items-center justify-center p-6 selection:bg-rose-500/30">
             <div className="absolute top-0 inset-x-0 h-px bg-linear-to-r from-transparent via-rose-500/50 to-transparent" />
 
             <motion.div
@@ -52,8 +52,8 @@ export default function UnauthorizedPage() {
                     <ShieldX size={40} />
                 </div>
 
-                <h1 className="text-3xl font-bold text-white mb-4 tracking-tight">Access Restricted</h1>
-                <p className="text-slate-400 mb-8 leading-relaxed">
+                <h1 className="text-3xl font-bold text-[#1A1A1A] mb-4 tracking-tight">Access Restricted</h1>
+                <p className="text-[#1A1A1A]/70 mb-8 leading-relaxed">
                     The wallet address <span className="text-rose-400 font-mono text-sm break-all">{address}</span> is not registered in the BPMS network. Request publisher or device access and wait for admin approval.
                 </p>
 
@@ -81,7 +81,7 @@ export default function UnauthorizedPage() {
                         <LogOut className="mr-2 group-hover:-translate-x-1 transition-transform" size={18} />
                         Disconnect Wallet
                     </Button>
-                    <p className="text-xs text-slate-500 font-medium">Access is granted by admin after on-chain role authorization</p>
+                    <p className="text-xs text-[#1A1A1A]/50 font-medium">Access is granted by admin after on-chain role authorization</p>
                 </div>
             </motion.div>
         </div>

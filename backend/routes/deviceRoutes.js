@@ -39,6 +39,7 @@ router.get(
 );
 router.post("/report", requireAuth, requireRole("device"), reportInstallation);
 router.get("/logs", requireAuth, requireRole("device"), getDeviceInstallationLogs);
+router.get("/history", requireAuth, requireRole("device"), getDeviceInstallationLogs);
 router.get("/stats", requireAuth, requireRole("device"), getDeviceStats);
 
 module.exports = router;

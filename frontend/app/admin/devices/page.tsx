@@ -148,8 +148,8 @@ export default function AdminDevices() {
     }
 
     const dashboardStats = [
-        { label: "Total Registered", value: devices.filter(d => d.status === "registered").length, icon: CheckCircle2, color: "text-emerald-500" },
-        { label: "Revoked", value: devices.filter(d => d.status === "revoked").length, icon: History, color: "text-slate-500" },
+        { label: "Total Registered", value: devices.filter(d => d.status === "registered").length, icon: CheckCircle2, color: "text-[#1A1A1A]" },
+        { label: "Revoked", value: devices.filter(d => d.status === "revoked").length, icon: History, color: "text-[#1A1A1A]/50" },
         { label: "Total Devices", value: devices.length, icon: Monitor, color: "text-blue-500" },
     ];
 
@@ -159,8 +159,8 @@ export default function AdminDevices() {
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                     <div className="space-y-2">
-                        <h1 className="text-4xl font-black text-white leading-tight tracking-tight">System Devices</h1>
-                        <p className="text-slate-400 font-medium">Manage and authorize endpoint hardware in the secure network.</p>
+                        <h1 className="text-4xl font-black text-[#1A1A1A] leading-tight tracking-tight">System Devices</h1>
+                        <p className="text-[#1A1A1A]/70 font-medium">Manage and authorize endpoint hardware in the secure network.</p>
                     </div>
                     <div className="flex gap-4">
                         <Button onClick={() => setIsModalOpen(true)} className="px-6 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-emerald-500/10">
@@ -172,13 +172,13 @@ export default function AdminDevices() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {dashboardStats.map((stat, idx) => (
-                        <div key={idx} className="glass p-5 rounded-2xl border border-white/5 flex items-center gap-6">
-                            <div className={`p-4 rounded-xl bg-slate-900 ${stat.color}`}>
+                        <div key={idx} className="glass p-5 rounded-2xl border border-[#1A1A1A]/5 flex items-center gap-6">
+                            <div className={`p-4 rounded-xl bg-white ${stat.color}`}>
                                 <stat.icon size={24} />
                             </div>
                             <div>
-                                <p className="text-xs uppercase font-bold text-slate-500 tracking-wider font-inter">{stat.label}</p>
-                                <p className="text-2xl font-black text-white mt-1">{stat.value}</p>
+                                <p className="text-xs uppercase font-bold text-[#1A1A1A]/50 tracking-wider font-inter">{stat.label}</p>
+                                <p className="text-2xl font-black text-[#1A1A1A] mt-1">{stat.value}</p>
                             </div>
                         </div>
                     ))}
@@ -201,17 +201,17 @@ export default function AdminDevices() {
                             <tbody>
                                 {isLoading ? (
                                     <tr>
-                                        <td colSpan={6} className="text-slate-400">Loading devices...</td>
+                                        <td colSpan={6} className="text-[#1A1A1A]/70">Loading devices...</td>
                                     </tr>
                                 ) : devices.length === 0 ? (
                                     <tr>
-                                        <td colSpan={6} className="text-slate-400">No devices found.</td>
+                                        <td colSpan={6} className="text-[#1A1A1A]/70">No devices found.</td>
                                     </tr>
                                 ) : devices.map((device) => (
                                     <tr key={device.walletAddress} className="group hover:bg-white/1">
-                                        <td className="font-mono text-slate-300 text-sm">
+                                        <td className="font-mono text-[#1A1A1A]/80 text-sm">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-500 group-hover:bg-emerald-500/10 group-hover:text-emerald-500 transition-all">
+                                                <div className="w-10 h-10 rounded-xl bg-[#EDEDED] flex items-center justify-center text-[#1A1A1A]/50 group-hover:bg-[#A9FD5F] group-hover:text-[#1A1A1A] transition-all">
                                                     <Monitor size={18} />
                                                 </div>
                                                 <span className="font-semibold tracking-tight">
@@ -219,14 +219,14 @@ export default function AdminDevices() {
                                                 </span>
                                             </div>
                                         </td>
-                                        <td className="text-sm text-slate-300">{device.deviceId}</td>
-                                        <td className="text-sm text-slate-300 uppercase">{device.deviceType}</td>
+                                        <td className="text-sm text-[#1A1A1A]/80">{device.deviceId}</td>
+                                        <td className="text-sm text-[#1A1A1A]/80 uppercase">{device.deviceType}</td>
                                         <td>
                                             <Badge variant={device.status === "registered" ? "success" : "error"}>
                                                 {device.status}
                                             </Badge>
                                         </td>
-                                        <td className="text-sm text-slate-400 font-medium">
+                                        <td className="text-sm text-[#1A1A1A]/70 font-medium">
                                             {new Date(device.lastSeen).toLocaleString()}
                                         </td>
                                         <td className="text-right">
@@ -267,7 +267,7 @@ export default function AdminDevices() {
                     }
                 >
                     <div className="space-y-6">
-                        <p className="text-slate-400 text-sm leading-relaxed">
+                        <p className="text-[#1A1A1A]/70 text-sm leading-relaxed">
                             Register a new hardware endpoint. The device will be issued a unique system token for cryptographical patch verification.
                         </p>
                         <FormInput
@@ -294,9 +294,9 @@ export default function AdminDevices() {
                             value={location}
                             onChange={(e) => setLocation(e.target.value)}
                         />
-                        <div className="p-4 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl flex items-start gap-4">
-                            <History size={20} className="text-emerald-500 mt-1" />
-                            <p className="text-xs text-emerald-500/80 leading-relaxed font-medium">
+                        <div className="p-4 bg-[#A9FD5F]/30 border border-emerald-500/10 rounded-2xl flex items-start gap-4">
+                            <History size={20} className="text-[#1A1A1A] mt-1" />
+                            <p className="text-xs text-[#1A1A1A]/80 leading-relaxed font-medium">
                                 The system will automatically perform a zero-trust compliance check once the device initiates its first sync heartbeat.
                             </p>
                         </div>

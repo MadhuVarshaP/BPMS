@@ -10,8 +10,25 @@ function stripVersion(v) {
     .replace(/^v/i, "");
 }
 
-/** Returns true if candidate is strictly newer than current (semver-like numeric segments). */
-function isVersionNewer(candidate, current) {
+function semverCompactRank(v) {
+  const s = stripVersion(v);
+  const m = s.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+  if (!m) return null;
+  const maj = parseInt(m[1], 10) || 0;
+  const min = parseInt(m[2] ?? "0", 10) || 0;
+  const pat = parseInt(m[3] ?? "0", 10) || 0;
+  return maj * 1_000_000 + min * 1_000 + pat;
+}
+
+function extractKbBuildId(v) {
+  const s = stripVersion(v);
+  const kb = s.match(/(?:kb|vkb)\s*(\d{4,})/i);
+  if (kb) return parseInt(kb[1], 10);
+  const long = s.match(/\b(\d{7,})\b/);
+  return long ? parseInt(long[1], 10) : null;
+}
+
+function segmentWiseNewer(candidate, current) {
   const c = stripVersion(candidate);
   const b = stripVersion(current);
   if (!b) return Boolean(c);
@@ -26,6 +43,40 @@ function isVersionNewer(candidate, current) {
     if (x < y) return false;
   }
   return false;
+}
+
+/** Semver segments, or KB-style (VKB5030211) vs semver (1.0.9). */
+function isVersionNewer(candidate, current) {
+  const c = stripVersion(candidate);
+  const b = stripVersion(current);
+  if (!b) return Boolean(c);
+  if (!c) return false;
+
+  const seg = segmentWiseNewer(candidate, current);
+  const p1 = c.split(/[.+_-]/).map((x) => parseInt(x, 10) || 0);
+  const looksLikeGarbageCandidate =
+    p1.length > 0 && p1.every((n) => n === 0) && /[a-z]/i.test(c);
+
+  if (!looksLikeGarbageCandidate && segmentWiseNewer(candidate, current)) {
+    return true;
+  }
+
+  const kbCand = extractKbBuildId(candidate);
+  const kbCur = extractKbBuildId(current);
+  const semCur = semverCompactRank(current);
+  const semCand = semverCompactRank(candidate);
+
+  if (kbCand != null && kbCur != null) {
+    return kbCand > kbCur;
+  }
+  if (kbCand != null && semCur != null) {
+    return kbCand > semCur;
+  }
+  if (semCand != null && kbCur != null) {
+    return semCand > kbCur;
+  }
+
+  return seg;
 }
 
 function platformMatches(patchPlatform, devicePlatform) {

@@ -42,17 +42,17 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#020617] flex items-center justify-center">
+            <div className="min-h-screen bg-[#EDEDED] flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
                     <div className="h-12 w-12 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin" />
-                    <p className="text-emerald-500 font-medium tracking-widest uppercase text-xs">Initializing Secure Environment...</p>
+                    <p className="text-[#1A1A1A] font-medium tracking-widest uppercase text-xs">Initializing Secure Environment...</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-[#020617] text-slate-200">
+        <div className="min-h-screen bg-[#EDEDED] text-[#1A1A1A]/90">
             <Sidebar isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} />
 
             <div className="flex flex-col min-h-screen transition-all duration-300 md:pl-20 lg:pl-[260px]">

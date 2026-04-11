@@ -136,8 +136,8 @@ export default function PublisherPublish() {
         <DashboardLayout>
             <div className="flex flex-col gap-8">
                 <div className="flex flex-col gap-2">
-                    <h1 className="text-4xl font-black text-white leading-tight tracking-tight">Deploy Artifact</h1>
-                    <p className="text-slate-400 font-medium">Verify software integrity and commit patch hash to the immutable registry.</p>
+                    <h1 className="text-4xl font-black text-[#1A1A1A] leading-tight tracking-tight">Deploy Artifact</h1>
+                    <p className="text-[#1A1A1A]/70 font-medium">Verify software integrity and commit patch hash to the immutable registry.</p>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
@@ -158,11 +158,11 @@ export default function PublisherPublish() {
                                     onChange={(e) => setFormData({ ...formData, version: e.target.value })}
                                 />
                                 <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-slate-400 ml-1">Target Platform</label>
+                                    <label className="text-sm font-semibold text-[#1A1A1A]/70 ml-1">Target Platform</label>
                                     <select
                                         value={formData.platform}
                                         onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
-                                        className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 appearance-none text-sm font-bold uppercase tracking-widest"
+                                        className="w-full bg-white border border-[#1A1A1A]/10 rounded-xl px-4 py-3 text-[#1A1A1A] focus:outline-none focus:border-[#1A1A1A]/30 appearance-none text-sm font-bold uppercase tracking-widest"
                                     >
                                         <option value="">Select platform</option>
                                         <option value="windows">windows</option>
@@ -173,13 +173,13 @@ export default function PublisherPublish() {
                                 </div>
                             </div>
 
-                            <div className="space-y-6 pt-4 border-t border-white/5">
+                            <div className="space-y-6 pt-4 border-t border-[#1A1A1A]/5">
                                 <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-slate-400 ml-1">Patch File Upload</label>
+                                    <label className="text-sm font-semibold text-[#1A1A1A]/70 ml-1">Patch File Upload</label>
                                     <input
                                         type="file"
                                         onChange={(e) => setPatchFile(e.target.files?.[0] || null)}
-                                        className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-white text-xs"
+                                        className="w-full bg-white border border-[#1A1A1A]/10 rounded-xl px-4 py-3 text-[#1A1A1A] text-xs"
                                     />
                                     <Button
                                         onClick={() => void handleUpload()}
@@ -191,26 +191,26 @@ export default function PublisherPublish() {
                                     </Button>
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-slate-400 ml-1 flex items-center gap-2">
+                                    <label className="text-sm font-semibold text-[#1A1A1A]/70 ml-1 flex items-center gap-2">
                                         <Database size={16} className="text-blue-500/60" />
                                         IPFS Gateway Hash (CID)
                                     </label>
                                     <input
                                         readOnly
-                                        className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-slate-700 font-mono text-xs focus:outline-none transition-all"
+                                        className="w-full bg-white border border-[#1A1A1A]/10 rounded-xl px-4 py-3 text-[#1A1A1A] placeholder:text-slate-700 font-mono text-xs focus:outline-none transition-all"
                                         placeholder="QmYxpizjUMmEc2D22m5BAbC...1234"
                                         value={formData.ipfs}
                                     />
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-slate-400 ml-1 flex items-center gap-2">
-                                        <Hash size={16} className="text-emerald-500/60" />
+                                    <label className="text-sm font-semibold text-[#1A1A1A]/70 ml-1 flex items-center gap-2">
+                                        <Hash size={16} className="text-[#1A1A1A]/60" />
                                         Build Integrity Hash (SHA-256)
                                     </label>
                                     <input
                                         readOnly
-                                        className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-slate-700 font-mono text-xs focus:outline-none transition-all"
+                                        className="w-full bg-white border border-[#1A1A1A]/10 rounded-xl px-4 py-3 text-[#1A1A1A] placeholder:text-slate-700 font-mono text-xs focus:outline-none transition-all"
                                         placeholder="0x9a8f...2e3cBA49...771B"
                                         value={formData.fileHash}
                                     />
@@ -220,7 +220,7 @@ export default function PublisherPublish() {
                             <div className="pt-8 flex gap-4">
                                 <Button variant="ghost" className="flex-1 rounded-xl py-6 font-bold" onClick={() => router.back()}>Cancel Operation</Button>
                                 <Button
-                                    className="flex-2 rounded-xl py-6 font-black uppercase tracking-widest shadow-xl shadow-emerald-500/10"
+                                    className="flex-2 rounded-xl py-6 font-black uppercase tracking-widest hover:bg-[#A9FD5F] hover:text-black flex items-center shadow-none hover:shadow-none"
                                     isLoading={isPublishing}
                                     onClick={handlePublish}
                                     disabled={!formData.namespace || !formData.version || !formData.platform || !formData.ipfs || !formData.fileHash}
@@ -232,22 +232,22 @@ export default function PublisherPublish() {
                     </Card>
 
                     <div className="space-y-6 sticky top-28">
-                        <div className="glass p-8 rounded-3xl border border-white/5 shadow-2xl relative overflow-hidden group">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-3xl rounded-full" />
+                        <div className="glass p-8 rounded-3xl border border-[#1A1A1A]/5 shadow-2xl relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-[#A9FD5F]/30 blur-3xl rounded-full" />
 
                             <div className="flex justify-between items-start mb-10">
-                                <div className="p-4 bg-emerald-500/10 rounded-2xl group-hover:scale-110 transition-transform duration-500">
-                                    <ShieldCheck size={32} className="text-emerald-500" />
+                                <div className="p-4 bg-[#A9FD5F] rounded-2xl group-hover:scale-110 transition-transform duration-500">
+                                    <ShieldCheck size={32} className="text-[#1A1A1A]" />
                                 </div>
                                 <div className="flex flex-col items-end gap-1">
                                     <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Protocol Version</span>
-                                    <span className="text-xs font-mono text-emerald-500/80">BPMS-1.0-SEC</span>
+                                    <span className="text-xs font-mono text-[#1A1A1A]/80">BPMS-1.0-SEC</span>
                                 </div>
                             </div>
 
                             <div className="space-y-8">
                                 <div className="space-y-2">
-                                    <h3 className="text-3xl font-black text-white tracking-tighter">
+                                    <h3 className="text-3xl font-black text-[#1A1A1A] tracking-tighter">
                                         {formData.namespace || "Software Namespace"}
                                     </h3>
                                     <div className="flex items-center gap-3">
@@ -256,36 +256,36 @@ export default function PublisherPublish() {
                                     </div>
                                 </div>
 
-                                <div className="space-y-4 pt-4 border-t border-white/5">
-                                    <div className="flex items-center gap-3 text-slate-500">
+                                <div className="space-y-4 pt-4 border-t border-[#1A1A1A]/5">
+                                    <div className="flex items-center gap-3 text-[#1A1A1A]/50">
                                         <FileCode size={16} />
                                         <p className="text-xs font-mono truncate max-w-xs">{formData.ipfs || "CID not specified"}</p>
                                     </div>
-                                    <div className="flex items-center gap-3 text-slate-500">
+                                    <div className="flex items-center gap-3 text-[#1A1A1A]/50">
                                         <Hash size={16} />
                                         <p className="text-xs font-mono truncate max-w-xs">{formData.fileHash || "SHA-256 awaiting input"}</p>
                                     </div>
                                 </div>
 
-                                <div className="p-4 bg-slate-900 border border-white/5 rounded-2xl flex items-center justify-between">
+                                <div className="p-4 bg-white border border-[#1A1A1A]/5 rounded-2xl flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                        <Loader2 size={16} className={`text-emerald-500 ${publishPhase !== "idle" ? "animate-spin" : "opacity-20"}`} />
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Status</span>
+                                        <Loader2 size={16} className={`text-[#1A1A1A] ${publishPhase !== "idle" ? "animate-spin" : "opacity-20"}`} />
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/50">Status</span>
                                     </div>
-                                    <span className="text-xs font-bold text-emerald-500 uppercase tracking-tight">
+                                    <span className="text-xs font-bold text-[#1A1A1A] uppercase tracking-tight">
                                         {statusLabel}
                                     </span>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="p-6 bg-slate-900/50 rounded-2xl border border-white/5 flex gap-4 items-start">
+                        <div className="p-6 bg-[#1A1A1A]/10 rounded-2xl border border-[#1A1A1A]/5 flex gap-4 items-start">
                             <div className="p-2 bg-blue-500/10 text-blue-500 rounded-lg">
                                 <Info size={16} />
                             </div>
                             <div>
-                                <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-1">Infrastructure Notice</h5>
-                                <p className="text-xs text-slate-400 font-medium leading-relaxed">
+                                <h5 className="text-[11px] font-black text-[#1A1A1A]/50 uppercase tracking-widest mb-1">Infrastructure Notice</h5>
+                                <p className="text-xs text-[#1A1A1A]/70 font-medium leading-relaxed">
                                     Once committed, the build metadata is pinned globally across IPFS cluster nodes. Changes require a new version release.
                                 </p>
                             </div>

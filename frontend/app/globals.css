@@ -1,15 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #020617;
-  --foreground: #f8fafc;
-  --primary: #10b981;
-  --primary-foreground: #020617;
-  --secondary: #1e293b;
-  --accent: #3b82f6;
-  --sidebar: #0f172a;
-  --card: #1e293b;
-  --border: #334155;
+  --background: #EDEDED;
+  --foreground: #1A1A1A;
+  --primary: #A9FD5F;
+  --primary-foreground: #1A1A1A;
+  --secondary: #FFFFFF;
+  --accent: #E8EAEB;
+  --sidebar: #1A1A1A;
+  --card: #FFFFFF;
+  --border: rgba(26, 26, 26, 0.1);
 }
 
 @theme inline {
@@ -37,17 +37,17 @@ body {
 
 /* Glassmorphism */
 .glass {
-  background: rgba(30, 41, 59, 0.7);
+  background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(26, 26, 26, 0.1);
 }
 
 .glass-dark {
-  background: rgba(15, 23, 42, 0.8);
+  background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(26, 26, 26, 0.05);
 }
 
 /* Custom Scrollbar */
@@ -87,14 +87,14 @@ body {
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
+  background: #1A1A1A;
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .dashboard-gradient {
-  background: radial-gradient(circle at 50% -20%, #1e293b 0%, #020617 100%);
+  background: radial-gradient(circle at 50% -20%, #ffffff 0%, #EDEDED 100%);
 }
 
 /* Table styles */
@@ -110,8 +110,8 @@ table {
 th {
   text-align: left;
   padding: 1rem;
-  font-weight: 600;
-  color: #94a3b8;
+  font-weight: 700;
+  color: #1A1A1A;
   font-size: 0.875rem;
   border-bottom: 1px solid var(--border);
 }
@@ -119,9 +119,9 @@ th {
 td {
   padding: 1rem;
   font-size: 0.875rem;
-  border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+  border-bottom: 1px solid rgba(26, 26, 26, 0.05);
 }
 
 tr:hover {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(26, 26, 26, 0.02);
 }
