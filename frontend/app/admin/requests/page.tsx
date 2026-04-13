@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card } from "@/components/Cards";
 import { Badge, Button } from "@/components/UI";
-import { Ban, CheckCircle2, Clock3, Cpu, XCircle } from "lucide-react";
+import { CheckCircle2, Clock3, XCircle } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import { useToast } from "@/context/ToastContext";
 import { bpmsContractAbi } from "@/lib/contractAbi";
@@ -194,70 +194,6 @@ export default function AdminRequestsPage() {
     }
   }
 
-  async function revokeApprovedPublisher(request: AccessRequest) {
-    if (!address || actionId) return;
-    const busyKey = `revoke:${request._id}`;
-    setActionId(busyKey);
-    try {
-      const contractAddress = getFrontendContractAddress();
-      const contract = await getContractWithSigner(contractAddress, bpmsContractAbi);
-      const tx = await contract.revokePublisher(request.walletAddress);
-      await tx.wait();
-
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-      const response = await fetch(`${baseUrl}/api/admin/revoke-publisher`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-wallet-address": address
-        },
-        body: JSON.stringify({ walletAddress: request.walletAddress })
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to sync publisher revocation");
-      }
-      showToast("Publisher revoked on chain and in directory", "success");
-      await fetchRequests();
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Revoke failed", "error");
-    } finally {
-      setActionId(null);
-    }
-  }
-
-  async function revokeApprovedDevice(request: AccessRequest) {
-    if (!address || actionId) return;
-    const busyKey = `revoke-device:${request._id}`;
-    setActionId(busyKey);
-    try {
-      const contractAddress = getFrontendContractAddress();
-      const contract = await getContractWithSigner(contractAddress, bpmsContractAbi);
-      const tx = await contract.revokeDevice(request.walletAddress);
-      await tx.wait();
-
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-      const response = await fetch(`${baseUrl}/api/admin/revoke-device`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-wallet-address": address
-        },
-        body: JSON.stringify({ walletAddress: request.walletAddress })
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to sync device revocation");
-      }
-      showToast("Device revoked on chain and in directory", "success");
-      await fetchRequests();
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Device revoke failed", "error");
-    } finally {
-      setActionId(null);
-    }
-  }
-
   return (
     <DashboardLayout>
       <div className="flex flex-col gap-8">
@@ -325,7 +261,7 @@ export default function AdminRequestsPage() {
           )}
         </Card>
 
-        <Card title="Approved" subtitle="On-chain authorization recorded; publisher access can be revoked below">
+        <Card title="Approved" subtitle="On-chain authorization recorded (history)">
           <div className="space-y-3">
             {isLoading ? (
               <p className="text-[#1A1A1A]/50 text-sm">Loading…</p>
@@ -354,29 +290,6 @@ export default function AdminRequestsPage() {
                       </p>
                     ) : null}
                   </div>
-                  {request.requestedRole === "publisher" ? (
-                    <Button
-                      variant="danger"
-                      className="shrink-0 min-w-32"
-                      isLoading={actionId === `revoke:${request._id}`}
-                      disabled={Boolean(actionId) && actionId !== `revoke:${request._id}`}
-                      onClick={() => void revokeApprovedPublisher(request)}
-                    >
-                      <Ban size={16} className="mr-1" />
-                      Revoke
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="danger"
-                      className="shrink-0 min-w-32"
-                      isLoading={actionId === `revoke-device:${request._id}`}
-                      disabled={Boolean(actionId) && actionId !== `revoke-device:${request._id}`}
-                      onClick={() => void revokeApprovedDevice(request)}
-                    >
-                      <Cpu size={14} className="mr-1" />
-                      Revoke Device
-                    </Button>
-                  )}
                 </div>
               ))
             )}

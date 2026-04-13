@@ -44,6 +44,18 @@ router.post("/request/publisher", async (req, res, next) => {
 
     const normalized = normalizeAddress(walletAddress);
     const existingUser = await User.findOne({ walletAddress: normalized });
+    const pendingAnyRole = await AccessRequest.findOne({
+      walletAddress: normalized,
+      status: "pending"
+    });
+
+    if (pendingAnyRole && pendingAnyRole.requestedRole !== "publisher") {
+      return res.status(409).json({
+        error: `Access request already pending for ${pendingAnyRole.requestedRole}. One wallet can have only one pending role request at a time.`,
+        status: "pending-other-role",
+        request: pendingAnyRole
+      });
+    }
 
     if (existingUser?.role === "publisher" && existingUser?.status === "active") {
       return res.status(200).json({
@@ -92,6 +104,18 @@ router.post("/request/device", async (req, res, next) => {
 
     const normalized = normalizeAddress(walletAddress);
     const existingUser = await User.findOne({ walletAddress: normalized });
+    const pendingAnyRole = await AccessRequest.findOne({
+      walletAddress: normalized,
+      status: "pending"
+    });
+
+    if (pendingAnyRole && pendingAnyRole.requestedRole !== "device") {
+      return res.status(409).json({
+        error: `Access request already pending for ${pendingAnyRole.requestedRole}. One wallet can have only one pending role request at a time.`,
+        status: "pending-other-role",
+        request: pendingAnyRole
+      });
+    }
 
     if (existingUser?.role === "device" && existingUser?.status === "active") {
       return res.status(200).json({

@@ -50,10 +50,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                     <div
                         key={toast.id}
                         className={cn(
-                            "glass-dark border p-4 rounded-xl shadow-2xl animate-fade-in flex items-start gap-3 transition-all",
-                            toast.type === "success" ? "border-emerald-500/20" :
-                                toast.type === "error" ? "border-rose-500/20" :
-                                    toast.type === "warning" ? "border-amber-500/20" : "border-blue-500/20"
+                            "border p-4 rounded-xl shadow-2xl animate-fade-in flex items-start gap-3 transition-all bg-white/95 backdrop-blur-md",
+                            toast.type === "success" ? "border-emerald-500/30" :
+                                toast.type === "error" ? "border-rose-500/30" :
+                                    toast.type === "warning" ? "border-amber-500/30" : "border-blue-500/30"
                         )}
                     >
                         <div className={cn(
@@ -68,9 +68,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                             {toast.type === "info" && <Info size={18} />}
                         </div>
                         <div className="flex-1 pt-1">
-                            <p className="text-sm font-bold text-white tracking-tight">{toast.message}</p>
+                            <p className="text-sm font-bold text-slate-900 tracking-tight">{toast.message}</p>
                         </div>
-                        <button onClick={() => removeToast(toast.id)} className="p-1 text-slate-500 hover:text-white transition-all">
+                        <button onClick={() => removeToast(toast.id)} className="p-1 text-slate-500 hover:text-slate-900 transition-all">
                             <X size={14} />
                         </button>
                     </div>

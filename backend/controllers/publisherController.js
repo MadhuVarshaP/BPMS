@@ -141,7 +141,44 @@ async function getPublisherPatches(req, res, next) {
       publisher: req.auth.walletAddress
     }).sort({ releaseTime: -1 });
 
-    return res.json({ count: patches.length, patches });
+    const patchIds = patches.map((p) => p.patchId);
+    if (patchIds.length === 0) {
+      return res.json({ count: 0, patches: [] });
+    }
+
+    const metrics = await InstallationLog.aggregate([
+      { $match: { patchId: { $in: patchIds } } },
+      {
+        $group: {
+          _id: "$patchId",
+          total: { $sum: 1 },
+          success: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "success"] }, 1, 0]
+            }
+          }
+        }
+      }
+    ]);
+
+    const metricByPatchId = new Map();
+    for (const row of metrics) {
+      const total = Number(row.total || 0);
+      const success = Number(row.success || 0);
+      const successRate = total === 0 ? 0 : Number(((success / total) * 100).toFixed(2));
+      metricByPatchId.set(Number(row._id), { installCount: total, successRate });
+    }
+
+    const patchesWithMetrics = patches.map((p) => {
+      const m = metricByPatchId.get(p.patchId) || { installCount: 0, successRate: 0 };
+      return {
+        ...p.toObject(),
+        installCount: m.installCount,
+        successRate: m.successRate
+      };
+    });
+
+    return res.json({ count: patchesWithMetrics.length, patches: patchesWithMetrics });
   } catch (error) {
     return next(error);
   }

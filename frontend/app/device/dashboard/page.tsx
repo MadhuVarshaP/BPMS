@@ -68,6 +68,8 @@ type Stats = {
 type InstallPhase =
     | "idle"
     | "checking"
+    | "preparing"
+    | "approving"
     | "downloading"
     | "verifying"
     | "installing"
@@ -78,8 +80,10 @@ type InstallPhase =
 const PHASE_PROGRESS: Record<InstallPhase, number> = {
     idle: 0,
     checking: 12,
+    preparing: 24,
     downloading: 35,
     verifying: 55,
+    approving: 62,
     installing: 72,
     reporting: 88,
     success: 100,
@@ -278,8 +282,8 @@ export default function DeviceDashboard() {
         setInstalling(true);
         setInstallingPatchId(patchToInstall.patchId);
         setFailedPatchId(null);
-        setPhase("downloading");
-        setPhaseMessage("Downloading patch ZIP…");
+        setPhase("preparing");
+        setPhaseMessage("Preparing patch (fetching from IPFS)…");
         const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
         const contractAddress = getFrontendContractAddress();
 
@@ -292,11 +296,6 @@ export default function DeviceDashboard() {
                 throw new Error("Download failed — check IPFS gateway or patch CID");
             }
             const buf = await dl.arrayBuffer();
-
-            triggerBrowserDownload(
-                buf,
-                `${patchToInstall.softwareName.replace(/[^a-z0-9._-]+/gi, "_")}-v${patchToInstall.version}.zip`
-            );
 
             setPhase("verifying");
             setPhaseMessage("Computing SHA-256 and comparing to on-chain fileHash…");
@@ -329,18 +328,27 @@ export default function DeviceDashboard() {
                 return;
             }
 
-            setPhase("installing");
-            setPhaseMessage("Simulating install (replace binaries / run installer)…");
-            await new Promise((r) => setTimeout(r, 900));
-
-            setPhase("reporting");
-            setPhaseMessage("Recording installation on-chain…");
+            setPhase("approving");
+            setPhaseMessage("Approve and sign the on-chain transaction (gas fees)…");
             const tx = await contract.reportInstallation(patchToInstall.patchId, true);
             const receipt = await tx.wait();
             if (!receipt) throw new Error("No receipt from network");
 
             const logIndex = findPatchInstalledLogIndex(contract, receipt, contractAddress);
 
+            setPhase("downloading");
+            setPhaseMessage("Downloading patch ZIP…");
+            triggerBrowserDownload(
+                buf,
+                `${patchToInstall.softwareName.replace(/[^a-z0-9._-]+/gi, "_")}-v${patchToInstall.version}.zip`
+            );
+
+            setPhase("installing");
+            setPhaseMessage("Simulating install (replace binaries / run installer)…");
+            await new Promise((r) => setTimeout(r, 900));
+
+            setPhase("reporting");
+            setPhaseMessage("Syncing installation report to backend…");
             await apiPost(
                 "/api/device/report",
                 {
@@ -699,7 +707,7 @@ export default function DeviceDashboard() {
                                         {patchCatalog.map((patch) => (
                                             <div
                                                 key={`catalog-${patch.patchId}`}
-                                                className="p-3 rounded-xl border border-[#1A1A1A]/10 bg-slate-950/40 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                                                className="p-3 rounded-xl border border-[#1A1A1A]/60 bg-[#1A1A1A]/10 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
                                             >
                                                 <div>
                                                     <p className="text-sm font-bold text-[#1A1A1A]">

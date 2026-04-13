@@ -282,12 +282,23 @@ export default function AdminDevices() {
                             value={deviceId}
                             onChange={(e) => setDeviceId(e.target.value)}
                         />
-                        <FormInput
-                            label="Device Type"
-                            placeholder="server | drone | radar | sensor | other"
-                            value={deviceType}
-                            onChange={(e) => setDeviceType(e.target.value)}
-                        />
+                        <div className="space-y-2">
+                            <label className="text-sm font-semibold text-[#1A1A1A]/70 ml-1">Device Type</label>
+                            <select
+                                value={deviceType}
+                                onChange={(e) => setDeviceType(e.target.value)}
+                                className="w-full bg-white border border-[#1A1A1A]/10 rounded-xl px-4 py-3 text-[#1A1A1A] focus:outline-none focus:border-[#1A1A1A]/30 transition-all"
+                            >
+                                <option value="server">Server</option>
+                                <option value="drone">Drone</option>
+                                <option value="radar">Radar</option>
+                                <option value="sensor">Sensor</option>
+                                <option value="other">Other (unclassified / miscellaneous)</option>
+                            </select>
+                            <p className="text-xs text-[#1A1A1A]/60 ml-1">
+                                Choose <span className="font-semibold">Other</span> for anything that doesn’t fit the standard categories.
+                            </p>
+                        </div>
                         <FormInput
                             label="Location (optional)"
                             placeholder="Data center - rack A"

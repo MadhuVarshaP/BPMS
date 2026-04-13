@@ -10,11 +10,11 @@ import { useToast } from "@/context/ToastContext";
 export default function UnauthorizedPage() {
     const { address, disconnectWallet } = useWallet();
     const { showToast } = useToast();
-    const [isSubmitting, setIsSubmitting] = React.useState(false);
+    const [submittingRole, setSubmittingRole] = React.useState<"publisher" | "device" | null>(null);
 
     async function requestAccess(role: "publisher" | "device") {
-        if (!address || isSubmitting) return;
-        setIsSubmitting(true);
+        if (!address || submittingRole) return;
+        setSubmittingRole(role);
         try {
             const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
             const response = await fetch(`${baseUrl}/api/request/${role}`, {
@@ -28,19 +28,24 @@ export default function UnauthorizedPage() {
             });
             const payload = (await response.json()) as { message?: string; error?: string };
             if (!response.ok) {
-                showToast(payload.error || "Failed to submit request", "error");
+                const msg = payload.error || "Failed to submit request";
+                if (msg.toLowerCase().includes("already pending")) {
+                    showToast(msg, "warning");
+                } else {
+                    showToast(msg, "error");
+                }
                 return;
             }
             showToast(payload.message || "Request submitted", "success");
         } catch {
             showToast("Failed to submit request", "error");
         } finally {
-            setIsSubmitting(false);
+            setSubmittingRole(null);
         }
     }
 
     return (
-        <div className="min-h-screen bg-[#EDEDED] flex items-center justify-center p-6 selection:bg-rose-500/30">
+        <div className="min-h-screen bg-[#EDEDED] flex items-center justify-center p-6">
             <div className="absolute top-0 inset-x-0 h-px bg-linear-to-r from-transparent via-rose-500/50 to-transparent" />
 
             <motion.div
@@ -60,14 +65,16 @@ export default function UnauthorizedPage() {
                 <div className="space-y-4">
                     <Button
                         onClick={() => void requestAccess("publisher")}
-                        isLoading={isSubmitting}
+                        isLoading={submittingRole === "publisher"}
+                        disabled={submittingRole !== null && submittingRole !== "publisher"}
                         className="w-full py-6 rounded-2xl text-base"
                     >
                         Request Publisher Access
                     </Button>
                     <Button
                         onClick={() => void requestAccess("device")}
-                        isLoading={isSubmitting}
+                        isLoading={submittingRole === "device"}
+                        disabled={submittingRole !== null && submittingRole !== "device"}
                         variant="outline"
                         className="w-full py-6 rounded-2xl text-base"
                     >
