@@ -19,6 +19,11 @@ import { useToast } from "@/context/ToastContext";
 import { bpmsContractAbi } from "@/lib/contractAbi";
 import { getContractWithSigner, getFrontendContractAddress, getSigner } from "@/lib/ethers";
 
+const PATCH_FILE_ACCEPT = ".zip,.pkg,.dmg,.exe,.msi,.deb,.rpm,.tar,.gz,.tgz,.7z,.bin,.sh";
+const ALLOWED_PATCH_EXTENSIONS = new Set(
+    PATCH_FILE_ACCEPT.split(",").map((ext) => ext.trim().toLowerCase())
+);
+
 export default function PublisherPublish() {
     const { address } = useWallet();
     const { showToast } = useToast();
@@ -36,6 +41,21 @@ export default function PublisherPublish() {
         "idle" | "signing" | "confirming" | "syncing" | "done"
     >("idle");
     const router = useRouter();
+
+    const handlePatchFileChange = (file: File | null) => {
+        if (!file) {
+            setPatchFile(null);
+            return;
+        }
+        const dotIndex = file.name.lastIndexOf(".");
+        const extension = dotIndex >= 0 ? file.name.slice(dotIndex).toLowerCase() : "";
+        if (!ALLOWED_PATCH_EXTENSIONS.has(extension)) {
+            showToast(`Unsupported file type ${extension || "(no extension)"}. .pkg files are supported.`, "error");
+            setPatchFile(null);
+            return;
+        }
+        setPatchFile(file);
+    };
 
     const handleUpload = async () => {
         if (!address || !patchFile) return;
@@ -178,7 +198,8 @@ export default function PublisherPublish() {
                                     <label className="text-sm font-semibold text-[#1A1A1A]/70 ml-1">Patch File Upload</label>
                                     <input
                                         type="file"
-                                        onChange={(e) => setPatchFile(e.target.files?.[0] || null)}
+                                        accept={PATCH_FILE_ACCEPT}
+                                        onChange={(e) => handlePatchFileChange(e.target.files?.[0] || null)}
                                         className="w-full bg-white border border-[#1A1A1A]/10 rounded-xl px-4 py-3 text-[#1A1A1A] text-xs"
                                     />
                                     <Button

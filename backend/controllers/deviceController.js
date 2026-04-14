@@ -94,6 +94,28 @@ function namespaceMatches(patchSoftware, deviceNs) {
   return s === n;
 }
 
+function extensionFromMimeType(mimeType) {
+  const type = String(mimeType || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  const extMap = {
+    "application/zip": "zip",
+    "application/x-zip-compressed": "zip",
+    "application/octet-stream": "bin",
+    "application/x-msdownload": "exe",
+    "application/vnd.microsoft.portable-executable": "exe",
+    "application/x-apple-diskimage": "dmg",
+    "application/vnd.debian.binary-package": "deb",
+    "application/x-rpm": "rpm",
+    "application/gzip": "gz",
+    "application/x-gzip": "gz",
+    "application/x-tar": "tar",
+    "application/x-7z-compressed": "7z"
+  };
+  return extMap[type] || "bin";
+}
+
 async function getMe(req, res, next) {
   try {
     const device = await Device.findOne({ walletAddress: req.auth.walletAddress });
@@ -346,10 +368,23 @@ async function downloadPatch(req, res, next) {
     const url = `${gateway}/${patch.ipfsHash}`;
 
     const fileResponse = await axios.get(url, { responseType: "stream" });
-    res.setHeader(
-      "Content-Type",
-      fileResponse.headers["content-type"] || "application/octet-stream"
-    );
+    const upstreamType =
+      fileResponse.headers["content-type"] || "application/octet-stream";
+    const upstreamDisposition = fileResponse.headers["content-disposition"];
+    const safeBase = `${patch.softwareName}-v${patch.version}`
+      .replace(/[^a-z0-9._-]+/gi, "_")
+      .replace(/^_+|_+$/g, "");
+
+    res.setHeader("Content-Type", upstreamType);
+    if (upstreamDisposition) {
+      res.setHeader("Content-Disposition", upstreamDisposition);
+    } else {
+      const ext = extensionFromMimeType(upstreamType);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${safeBase || `patch-${patch.patchId}`}.${ext}"`
+      );
+    }
     fileResponse.data.pipe(res);
   } catch (error) {
     return next(error);

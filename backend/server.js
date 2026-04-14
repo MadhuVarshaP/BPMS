@@ -18,8 +18,34 @@ const deviceRoutes = require("./routes/deviceRoutes");
 
 const app = express();
 
+const defaultAllowedOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "https://bpms-frontend.vercel.app"
+];
+const configuredAllowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+const allowedOrigins =
+  configuredAllowedOrigins.length > 0 ? configuredAllowedOrigins : defaultAllowedOrigins;
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error("Not allowed by CORS"));
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-wallet-address"],
+  optionsSuccessStatus: 204
+};
+
 app.use(helmet());
-app.use(cors());
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 
 app.get("/health", (_req, res) => {

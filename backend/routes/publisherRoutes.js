@@ -1,5 +1,6 @@
 const express = require("express");
 const multer = require("multer");
+const path = require("path");
 
 const { requireAuth, requireRole } = require("../middleware/authMiddleware");
 const {
@@ -12,10 +13,39 @@ const {
 
 const router = express.Router();
 
+const allowedPatchExtensions = new Set([
+  ".zip",
+  ".pkg",
+  ".dmg",
+  ".exe",
+  ".msi",
+  ".deb",
+  ".rpm",
+  ".tar",
+  ".gz",
+  ".tgz",
+  ".7z",
+  ".bin",
+  ".sh"
+]);
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 100 * 1024 * 1024
+  },
+  fileFilter(_req, file, cb) {
+    const ext = path.extname(String(file.originalname || "")).toLowerCase();
+    if (allowedPatchExtensions.has(ext)) {
+      return cb(null, true);
+    }
+    const err = new Error(
+      `Unsupported patch file type "${ext || "unknown"}". Allowed types: ${Array.from(
+        allowedPatchExtensions
+      ).join(", ")}`
+    );
+    err.statusCode = 400;
+    return cb(err);
   }
 });
 

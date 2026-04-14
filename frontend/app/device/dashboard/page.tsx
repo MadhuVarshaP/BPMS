@@ -90,7 +90,7 @@ const PHASE_PROGRESS: Record<InstallPhase, number> = {
     error: 0
 };
 
-function triggerBrowserDownload(bytes: ArrayBuffer, filename: string, mimeType = "application/zip") {
+function triggerBrowserDownload(bytes: ArrayBuffer, filename: string, mimeType = "application/octet-stream") {
     const blob = new Blob([bytes], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -100,6 +100,70 @@ function triggerBrowserDownload(bytes: ArrayBuffer, filename: string, mimeType =
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+}
+
+function extensionFromMimeType(contentType: string) {
+    const normalized = contentType.split(";")[0].trim().toLowerCase();
+    const extMap: Record<string, string> = {
+        "application/zip": "zip",
+        "application/x-zip-compressed": "zip",
+        "application/octet-stream": "bin",
+        "application/x-msdownload": "exe",
+        "application/vnd.microsoft.portable-executable": "exe",
+        "application/x-apple-diskimage": "dmg",
+        "application/vnd.debian.binary-package": "deb",
+        "application/x-rpm": "rpm",
+        "application/gzip": "gz",
+        "application/x-gzip": "gz",
+        "application/x-tar": "tar",
+        "application/x-7z-compressed": "7z"
+    };
+    return extMap[normalized] || "bin";
+}
+
+function parseFilenameFromContentDisposition(contentDisposition: string | null): string | null {
+    if (!contentDisposition) return null;
+    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) {
+        try {
+            return decodeURIComponent(utf8Match[1].replace(/^"(.*)"$/, "$1"));
+        } catch {
+            /* fall through to basic filename parsing */
+        }
+    }
+    const basicMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+    return basicMatch?.[1] || null;
+}
+
+function inferExtensionFromBytes(bytes: ArrayBuffer): string | null {
+    const view = new Uint8Array(bytes.slice(0, 8));
+    if (view.length >= 4 && view[0] === 0x50 && view[1] === 0x4b && view[2] === 0x03 && view[3] === 0x04) {
+        return "zip";
+    }
+    if (view.length >= 2 && view[0] === 0x4d && view[1] === 0x5a) {
+        return "exe";
+    }
+    if (view.length >= 4 && view[0] === 0x7f && view[1] === 0x45 && view[2] === 0x4c && view[3] === 0x46) {
+        return "elf";
+    }
+    if (view.length >= 2 && view[0] === 0x23 && view[1] === 0x21) {
+        return "sh";
+    }
+    return null;
+}
+
+function getDownloadFilename(
+    patch: PatchRec,
+    contentDisposition: string | null,
+    contentType: string,
+    bytes: ArrayBuffer
+) {
+    const parsedName = parseFilenameFromContentDisposition(contentDisposition);
+    if (parsedName) return parsedName;
+    const safeBase = `${patch.softwareName.replace(/[^a-z0-9._-]+/gi, "_")}-v${patch.version}`;
+    const fromMime = extensionFromMimeType(contentType);
+    const extension = fromMime === "bin" ? inferExtensionFromBytes(bytes) || fromMime : fromMime;
+    return `${safeBase}.${extension}`;
 }
 
 function findPatchInstalledLogIndex(
@@ -296,6 +360,8 @@ export default function DeviceDashboard() {
                 throw new Error("Download failed — check IPFS gateway or patch CID");
             }
             const buf = await dl.arrayBuffer();
+            const responseContentType = dl.headers.get("content-type") || "application/octet-stream";
+            const responseDisposition = dl.headers.get("content-disposition");
 
             setPhase("verifying");
             setPhaseMessage("Computing SHA-256 and comparing to on-chain fileHash…");
@@ -337,10 +403,11 @@ export default function DeviceDashboard() {
             const logIndex = findPatchInstalledLogIndex(contract, receipt, contractAddress);
 
             setPhase("downloading");
-            setPhaseMessage("Downloading patch ZIP…");
+            setPhaseMessage("Downloading patch artifact…");
             triggerBrowserDownload(
                 buf,
-                `${patchToInstall.softwareName.replace(/[^a-z0-9._-]+/gi, "_")}-v${patchToInstall.version}.zip`
+                getDownloadFilename(patchToInstall, responseDisposition, responseContentType, buf),
+                responseContentType
             );
 
             setPhase("installing");
