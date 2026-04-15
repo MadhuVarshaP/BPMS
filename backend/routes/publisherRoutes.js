@@ -21,12 +21,11 @@ const allowedPatchExtensions = new Set([
   ".msi",
   ".deb",
   ".rpm",
-  ".tar",
-  ".gz",
-  ".tgz",
-  ".7z",
+  ".img",
+  ".iso",
   ".bin",
-  ".sh"
+  ".tar",
+  ".gz"
 ]);
 
 const upload = multer({
@@ -35,14 +34,14 @@ const upload = multer({
     fileSize: 100 * 1024 * 1024
   },
   fileFilter(_req, file, cb) {
-    const ext = path.extname(String(file.originalname || "")).toLowerCase();
-    if (allowedPatchExtensions.has(ext)) {
+    const fileName = String(file.originalname || "").toLowerCase().trim();
+    const ext = path.extname(fileName).toLowerCase();
+    const isTarGz = fileName.endsWith(".tar.gz");
+    if (isTarGz || allowedPatchExtensions.has(ext)) {
       return cb(null, true);
     }
     const err = new Error(
-      `Unsupported patch file type "${ext || "unknown"}". Allowed types: ${Array.from(
-        allowedPatchExtensions
-      ).join(", ")}`
+      `Unsupported patch file type "${ext || "unknown"}". Allowed types: .exe, .msi, .dmg, .pkg, .deb, .rpm, .bin, .zip, .tar.gz, .img, .iso`
     );
     err.statusCode = 400;
     return cb(err);

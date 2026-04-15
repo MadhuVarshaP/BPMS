@@ -19,10 +19,8 @@ import { useToast } from "@/context/ToastContext";
 import { bpmsContractAbi } from "@/lib/contractAbi";
 import { getContractWithSigner, getFrontendContractAddress, getSigner } from "@/lib/ethers";
 
-const PATCH_FILE_ACCEPT = ".zip,.pkg,.dmg,.exe,.msi,.deb,.rpm,.tar,.gz,.tgz,.7z,.bin,.sh";
-const ALLOWED_PATCH_EXTENSIONS = new Set(
-    PATCH_FILE_ACCEPT.split(",").map((ext) => ext.trim().toLowerCase())
-);
+const PATCH_FILE_ACCEPT = ".exe,.msi,.dmg,.pkg,.deb,.rpm,.bin,.zip,.tar,.gz,.img,.iso,.tar.gz";
+const ALLOWED_PATCH_EXTENSIONS = new Set([".exe", ".msi", ".dmg", ".pkg", ".deb", ".rpm", ".bin", ".zip", ".tar", ".gz", ".img", ".iso"]);
 
 export default function PublisherPublish() {
     const { address } = useWallet();
@@ -47,10 +45,12 @@ export default function PublisherPublish() {
             setPatchFile(null);
             return;
         }
-        const dotIndex = file.name.lastIndexOf(".");
-        const extension = dotIndex >= 0 ? file.name.slice(dotIndex).toLowerCase() : "";
-        if (!ALLOWED_PATCH_EXTENSIONS.has(extension)) {
-            showToast(`Unsupported file type ${extension || "(no extension)"}. .pkg files are supported.`, "error");
+        const name = file.name.toLowerCase().trim();
+        const dotIndex = name.lastIndexOf(".");
+        const extension = dotIndex >= 0 ? name.slice(dotIndex) : "";
+        const isTarGz = name.endsWith(".tar.gz");
+        if (!isTarGz && !ALLOWED_PATCH_EXTENSIONS.has(extension)) {
+            showToast("Unsupported file type. Allowed: .exe, .msi, .dmg, .pkg, .deb, .rpm, .bin, .zip, .tar.gz, .img, .iso", "error");
             setPatchFile(null);
             return;
         }

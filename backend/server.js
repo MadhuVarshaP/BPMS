@@ -27,13 +27,32 @@ const configuredAllowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || "")
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
-const allowedOrigins =
-  configuredAllowedOrigins.length > 0 ? configuredAllowedOrigins : defaultAllowedOrigins;
+const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...configuredAllowedOrigins]));
+
+function isOriginAllowed(origin) {
+  if (!origin) return true;
+  if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  // Support wildcard entries in env like: https://*.vercel.app
+  for (const rule of allowedOrigins) {
+    if (!rule.includes("*")) continue;
+    const regex = new RegExp(
+      `^${rule
+        .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+        .replace(/\*/g, ".*")}$`
+    );
+    if (regex.test(origin)) return true;
+  }
+
+  // Safe fallback for your deployed frontend + preview URLs.
+  return /^https:\/\/bpms-frontend(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(origin);
+}
 
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+    if (isOriginAllowed(origin)) {
       return callback(null, true);
     }
     return callback(new Error("Not allowed by CORS"));
