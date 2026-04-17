@@ -12,6 +12,8 @@ import {
 import { useWallet } from "@/context/WalletContext";
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { useToast } from "@/context/ToastContext";
 
 type Patch = {
     _id: string;
@@ -29,6 +31,8 @@ type Patch = {
 
 export default function PublisherPatches() {
     const { address } = useWallet();
+    const router = useRouter();
+    const { showToast } = useToast();
     const [selectedPatch, setSelectedPatch] = useState<Patch | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [myPatches, setMyPatches] = useState<Patch[]>([]);
@@ -37,12 +41,23 @@ export default function PublisherPatches() {
         if (!address) return;
         let cancelled = false;
         async function load() {
-            const data = await apiGet("/api/publisher/patches", address);
-            if (!cancelled) setMyPatches(((data as { patches?: Patch[] }).patches || []));
+            try {
+                const data = await apiGet("/api/publisher/patches", address);
+                if (!cancelled) setMyPatches(((data as { patches?: Patch[] }).patches || []));
+            } catch (e) {
+                const message = e instanceof Error ? e.message : "Unable to load publisher patches";
+                if (message.toLowerCase().includes("insufficient permissions")) {
+                    showToast("This wallet does not have publisher access. Please login with an authorized publisher wallet.", "error");
+                    router.push("/unauthorized");
+                } else {
+                    showToast(message, "error");
+                }
+                if (!cancelled) setMyPatches([]);
+            }
         }
         void load();
         return () => { cancelled = true; };
-    }, [address]);
+    }, [address, router, showToast]);
 
     const handleOpenDetails = (patch: Patch) => {
         setSelectedPatch(patch);
@@ -81,7 +96,7 @@ export default function PublisherPatches() {
                             </thead>
                             <tbody>
                                 {myPatches.map((patch) => (
-                                    <tr key={patch._id} className="group hover:bg-white/[0.01]">
+                                    <tr key={patch._id} className="group hover:bg-white/1">
                                         <td className="font-mono text-[#1A1A1A] text-xs font-bold">
                                             #P00{patch.patchId}
                                         </td>

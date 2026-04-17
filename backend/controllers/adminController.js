@@ -10,6 +10,14 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function getRejectedCount(walletAddress) {
+  return AccessRequest.countDocuments({ walletAddress, status: "rejected" });
+}
+
+function isBlocked(rejectedCount) {
+  return Number(rejectedCount || 0) >= 2;
+}
+
 async function registerDevice(req, res, next) {
   try {
     const { walletAddress, deviceId, deviceType, location, requestId } = req.body;
@@ -21,6 +29,24 @@ async function registerDevice(req, res, next) {
     }
 
     const normalized = normalizeAddress(walletAddress);
+    const rejectedCount = await getRejectedCount(normalized);
+    if (isBlocked(rejectedCount)) {
+      return res.status(403).json({
+        error:
+          "Wallet is blocked due to repeated rejected access requests (2 strikes).",
+        status: "blocked",
+        rejectedCount
+      });
+    }
+    const existingUser = await User.findOne({ walletAddress: normalized });
+    if (existingUser?.status === "active" && existingUser?.role === "publisher") {
+      return res.status(409).json({
+        error:
+          "Wallet is already an active publisher. One wallet can be either a device or a publisher (not both).",
+        status: "already-active-other-role",
+        role: existingUser.role
+      });
+    }
     const contract = getReadOnlyContract();
     let isRegisteredOnChain = false;
     for (let attempt = 1; attempt <= 20; attempt++) {
@@ -237,6 +263,24 @@ async function authorizePublisher(req, res, next) {
     }
 
     const normalized = normalizeAddress(walletAddress);
+    const rejectedCount = await getRejectedCount(normalized);
+    if (isBlocked(rejectedCount)) {
+      return res.status(403).json({
+        error:
+          "Wallet is blocked due to repeated rejected access requests (2 strikes).",
+        status: "blocked",
+        rejectedCount
+      });
+    }
+    const existingUser = await User.findOne({ walletAddress: normalized });
+    if (existingUser?.status === "active" && existingUser?.role === "device") {
+      return res.status(409).json({
+        error:
+          "Wallet is already an active device. One wallet can be either a device or a publisher (not both).",
+        status: "already-active-other-role",
+        role: existingUser.role
+      });
+    }
     const contract = getReadOnlyContract();
     let isAuthorizedOnChain = false;
     // Give RPC/indexer a short window to reflect the just-mined tx.
@@ -340,8 +384,45 @@ async function rejectPublisherRequest(req, res, next) {
     request.reviewedAt = new Date();
     await request.save();
 
+    const rejectedCount = await getRejectedCount(request.walletAddress);
     return res.json({
       message: "Publisher request rejected",
+      rejectedCount,
+      nextAction:
+        rejectedCount >= 2
+          ? "blocked"
+          : "warning",
+      request
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function rejectAccessRequest(req, res, next) {
+  try {
+    const requestId = req.params.requestId;
+    const request = await AccessRequest.findById(requestId);
+    if (!request) {
+      return res.status(404).json({ error: "Request not found" });
+    }
+    if (request.status !== "pending") {
+      return res.status(400).json({ error: "Only pending requests can be rejected" });
+    }
+
+    request.status = "rejected";
+    request.reviewedBy = req.auth.walletAddress;
+    request.reviewedAt = new Date();
+    await request.save();
+
+    const rejectedCount = await getRejectedCount(request.walletAddress);
+    return res.json({
+      message: "Access request rejected",
+      rejectedCount,
+      nextAction:
+        rejectedCount >= 2
+          ? "blocked"
+          : "warning",
       request
     });
   } catch (error) {
@@ -477,6 +558,7 @@ module.exports = {
   getAllPatches,
   getPublisherRequests,
   rejectPublisherRequest,
+  rejectAccessRequest,
   getInstallationLogs,
   getDashboardMetrics,
   triggerChainSync

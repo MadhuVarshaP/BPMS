@@ -11,6 +11,7 @@ const {
   getAllPatches,
   getPublisherRequests,
   rejectPublisherRequest,
+  rejectAccessRequest,
   getInstallationLogs,
   getDashboardMetrics,
   triggerChainSync
@@ -61,6 +62,12 @@ router.post(
   requireAuth,
   requireRole("admin"),
   rejectPublisherRequest
+);
+router.post(
+  "/requests/:requestId/reject",
+  requireAuth,
+  requireRole("admin"),
+  rejectAccessRequest
 );
 router.get("/devices", requireAuth, requireRole("admin"), getAllDevices);
 router.get("/logs", requireAuth, requireRole("admin"), getInstallationLogs);
