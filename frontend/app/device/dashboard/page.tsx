@@ -45,6 +45,8 @@ type PatchRec = {
     targetPlatform?: string;
     ipfsHash: string;
     fileHash: string;
+    artifactFileName?: string;
+    artifactMimeType?: string;
     active?: boolean;
 };
 
@@ -135,6 +137,12 @@ function parseFilenameFromContentDisposition(contentDisposition: string | null):
     return basicMatch?.[1] || null;
 }
 
+function isGenericFilename(name: string | null): boolean {
+    if (!name) return true;
+    const normalized = name.trim().toLowerCase();
+    return normalized === "blob" || normalized === "download" || normalized === "file";
+}
+
 function inferExtensionFromBytes(bytes: ArrayBuffer): string | null {
     const view = new Uint8Array(bytes.slice(0, 8));
     if (view.length >= 4 && view[0] === 0x50 && view[1] === 0x4b && view[2] === 0x03 && view[3] === 0x04) {
@@ -159,9 +167,12 @@ function getDownloadFilename(
     bytes: ArrayBuffer
 ) {
     const parsedName = parseFilenameFromContentDisposition(contentDisposition);
-    if (parsedName) return parsedName;
+    if (parsedName && !isGenericFilename(parsedName)) return parsedName;
+    if (patch.artifactFileName && !isGenericFilename(patch.artifactFileName)) {
+        return patch.artifactFileName;
+    }
     const safeBase = `${patch.softwareName.replace(/[^a-z0-9._-]+/gi, "_")}-v${patch.version}`;
-    const fromMime = extensionFromMimeType(contentType);
+    const fromMime = extensionFromMimeType(patch.artifactMimeType || contentType);
     const extension = fromMime === "bin" ? inferExtensionFromBytes(bytes) || fromMime : fromMime;
     return `${safeBase}.${extension}`;
 }
@@ -362,6 +373,7 @@ export default function DeviceDashboard() {
             const buf = await dl.arrayBuffer();
             const responseContentType = dl.headers.get("content-type") || "application/octet-stream";
             const responseDisposition = dl.headers.get("content-disposition");
+            const effectiveDownloadType = patchToInstall.artifactMimeType || responseContentType;
 
             setPhase("verifying");
             setPhaseMessage("Computing SHA-256 and comparing to on-chain fileHash…");
@@ -407,7 +419,7 @@ export default function DeviceDashboard() {
             triggerBrowserDownload(
                 buf,
                 getDownloadFilename(patchToInstall, responseDisposition, responseContentType, buf),
-                responseContentType
+                effectiveDownloadType
             );
 
             setPhase("installing");

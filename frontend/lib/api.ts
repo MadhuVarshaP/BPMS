@@ -1,9 +1,20 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 async function parseJson(response: Response) {
-  const data = (await response.json()) as Record<string, unknown>;
+  const rawText = await response.text();
+  let data: Record<string, unknown> = {};
+  try {
+    data = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
+  } catch {
+    data = {};
+  }
   if (!response.ok) {
-    const error = typeof data.error === "string" ? data.error : "Request failed";
+    const error =
+      typeof data.error === "string"
+        ? data.error
+        : rawText
+          ? rawText.slice(0, 180)
+          : "Request failed";
     throw new Error(error);
   }
   return data;

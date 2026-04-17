@@ -33,6 +33,10 @@ export default function PublisherPublish() {
         fileHash: "",
     });
     const [patchFile, setPatchFile] = useState<File | null>(null);
+    const [uploadedArtifactMeta, setUploadedArtifactMeta] = useState<{
+        artifactFileName?: string;
+        artifactMimeType?: string;
+    } | null>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [isPublishing, setIsPublishing] = useState(false);
     const [publishPhase, setPublishPhase] = useState<
@@ -43,6 +47,7 @@ export default function PublisherPublish() {
     const handlePatchFileChange = (file: File | null) => {
         if (!file) {
             setPatchFile(null);
+            setUploadedArtifactMeta(null);
             return;
         }
         const name = file.name.toLowerCase().trim();
@@ -52,9 +57,11 @@ export default function PublisherPublish() {
         if (!isTarGz && !ALLOWED_PATCH_EXTENSIONS.has(extension)) {
             showToast("Unsupported file type. Allowed: .exe, .msi, .dmg, .pkg, .deb, .rpm, .bin, .zip, .tar.gz, .img, .iso", "error");
             setPatchFile(null);
+            setUploadedArtifactMeta(null);
             return;
         }
         setPatchFile(file);
+        setUploadedArtifactMeta(null);
     };
 
     const handleUpload = async () => {
@@ -62,6 +69,11 @@ export default function PublisherPublish() {
         setIsUploading(true);
         try {
             const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+            if (baseUrl.includes("vercel.app") && patchFile.size > 4_500_000) {
+                throw new Error(
+                    "This backend host rejects large multipart uploads (>~4.5MB). Use a non-serverless backend URL for large .pkg files."
+                );
+            }
             const form = new FormData();
             form.append("patchFile", patchFile);
             const response = await fetch(`${baseUrl}/api/publisher/upload`, {
@@ -69,17 +81,31 @@ export default function PublisherPublish() {
                 headers: { "x-wallet-address": address },
                 body: form,
             });
-            const payload = (await response.json()) as {
+            const raw = await response.text();
+            let payload = {} as {
                 ipfsHash?: string;
                 fileHash?: string;
+                artifactFileName?: string;
+                artifactMimeType?: string;
                 error?: string;
             };
-            if (!response.ok) throw new Error(payload.error || "Upload failed");
+            try {
+                payload = raw ? (JSON.parse(raw) as typeof payload) : payload;
+            } catch {
+                payload = { error: raw || "Upload failed" };
+            }
+            if (!response.ok) {
+                throw new Error(payload.error || `Upload failed (HTTP ${response.status})`);
+            }
             setFormData((prev) => ({
                 ...prev,
                 ipfs: payload.ipfsHash || "",
                 fileHash: payload.fileHash || "",
             }));
+            setUploadedArtifactMeta({
+                artifactFileName: payload.artifactFileName || patchFile.name,
+                artifactMimeType: payload.artifactMimeType || patchFile.type || "application/octet-stream",
+            });
             showToast("File uploaded. IPFS + SHA256 generated.", "success");
         } catch (error) {
             showToast(error instanceof Error ? error.message : "Upload failed", "error");
@@ -126,6 +152,11 @@ export default function PublisherPublish() {
                 body: JSON.stringify({
                     txHash: tx.hash,
                     targetPlatform: platform,
+                    artifactFileName: uploadedArtifactMeta?.artifactFileName || patchFile?.name || undefined,
+                    artifactMimeType:
+                        uploadedArtifactMeta?.artifactMimeType ||
+                        patchFile?.type ||
+                        "application/octet-stream",
                 }),
             });
             const payload = (await response.json()) as { error?: string };
@@ -260,10 +291,10 @@ export default function PublisherPublish() {
                                 <div className="p-4 bg-[#A9FD5F] rounded-2xl group-hover:scale-110 transition-transform duration-500">
                                     <ShieldCheck size={32} className="text-[#1A1A1A]" />
                                 </div>
-                                <div className="flex flex-col items-end gap-1">
+                                {/* <div className="flex flex-col items-end gap-1">
                                     <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Protocol Version</span>
                                     <span className="text-xs font-mono text-[#1A1A1A]/80">BPMS-1.0-SEC</span>
-                                </div>
+                                </div> */}
                             </div>
 
                             <div className="space-y-8">

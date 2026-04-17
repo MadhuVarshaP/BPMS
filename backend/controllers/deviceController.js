@@ -116,6 +116,29 @@ function extensionFromMimeType(mimeType) {
   return extMap[type] || "bin";
 }
 
+function sanitizeFileName(name) {
+  const n = String(name || "")
+    .replace(/[\r\n"]/g, "")
+    .trim();
+  if (!n) return null;
+  return n;
+}
+
+function parseFilenameFromDisposition(contentDisposition) {
+  const input = String(contentDisposition || "");
+  if (!input) return null;
+  const utf8Match = input.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].replace(/^"(.*)"$/, "$1"));
+    } catch {
+      /* continue */
+    }
+  }
+  const basicMatch = input.match(/filename="?([^";]+)"?/i);
+  return basicMatch?.[1] || null;
+}
+
 async function getMe(req, res, next) {
   try {
     const device = await Device.findOne({ walletAddress: req.auth.walletAddress });
@@ -371,15 +394,46 @@ async function downloadPatch(req, res, next) {
     const upstreamType =
       fileResponse.headers["content-type"] || "application/octet-stream";
     const upstreamDisposition = fileResponse.headers["content-disposition"];
+    const metadataType = String(patch.artifactMimeType || "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    const effectiveType = metadataType || upstreamType;
     const safeBase = `${patch.softwareName}-v${patch.version}`
       .replace(/[^a-z0-9._-]+/gi, "_")
       .replace(/^_+|_+$/g, "");
+    const metadataFileName = sanitizeFileName(patch.artifactFileName);
+    if (!metadataFileName || !metadataType) {
+      const learnedFileName = sanitizeFileName(
+        parseFilenameFromDisposition(upstreamDisposition)
+      );
+      const learnedType = String(upstreamType || "")
+        .split(";")[0]
+        .trim()
+        .toLowerCase();
+      const update = {};
+      if (!metadataFileName && learnedFileName) {
+        update.artifactFileName = learnedFileName;
+      }
+      if (!metadataType && learnedType && learnedType !== "application/octet-stream") {
+        update.artifactMimeType = learnedType;
+      }
+      if (Object.keys(update).length > 0) {
+        await Patch.updateOne({ _id: patch._id }, { $set: update }).catch(() => null);
+      }
+    }
 
-    res.setHeader("Content-Type", upstreamType);
-    if (upstreamDisposition) {
+    res.setHeader("Content-Type", effectiveType || "application/octet-stream");
+    if (metadataFileName) {
+      const encoded = encodeURIComponent(metadataFileName);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${metadataFileName.replace(/"/g, "")}"; filename*=UTF-8''${encoded}`
+      );
+    } else if (upstreamDisposition) {
       res.setHeader("Content-Disposition", upstreamDisposition);
     } else {
-      const ext = extensionFromMimeType(upstreamType);
+      const ext = extensionFromMimeType(effectiveType);
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${safeBase || `patch-${patch.patchId}`}.${ext}"`

@@ -10,6 +10,26 @@ const { uploadBufferToPinata } = require("../services/ipfsService");
 const { sha256Hex } = require("../services/hashService");
 const { ethers } = require("ethers");
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sanitizeArtifactFileName(input) {
+  const raw = String(input || "")
+    .replace(/[\r\n"]/g, "")
+    .trim();
+  if (!raw) return null;
+  return raw;
+}
+
+function sanitizeMimeType(input) {
+  const value = String(input || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  return value || null;
+}
+
 async function uploadPatchFile(req, res, next) {
   try {
     if (!req.file) {
@@ -30,6 +50,8 @@ async function uploadPatchFile(req, res, next) {
       message: "Patch uploaded to IPFS successfully",
       ipfsHash: cid,
       fileHash,
+      artifactFileName: req.file.originalname,
+      artifactMimeType: req.file.mimetype || "application/octet-stream",
       size,
       timestamp
     });
@@ -45,7 +67,9 @@ async function uploadPatchFile(req, res, next) {
  */
 async function syncPatchFromTx(req, res, next) {
   try {
-    const { txHash, targetPlatform } = req.body;
+    const { txHash, targetPlatform, artifactFileName, artifactMimeType } = req.body;
+    const sanitizedArtifactFileName = sanitizeArtifactFileName(artifactFileName);
+    const sanitizedArtifactMimeType = sanitizeMimeType(artifactMimeType);
 
     if (!txHash) {
       return res.status(400).json({ error: "txHash is required" });
@@ -96,14 +120,32 @@ async function syncPatchFromTx(req, res, next) {
 
     const existingPatch = await Patch.findOne({ patchId });
     if (existingPatch) {
+      let shouldSave = false;
+      if (sanitizedArtifactFileName && !existingPatch.artifactFileName) {
+        existingPatch.artifactFileName = sanitizedArtifactFileName;
+        shouldSave = true;
+      }
+      if (sanitizedArtifactMimeType && !existingPatch.artifactMimeType) {
+        existingPatch.artifactMimeType = sanitizedArtifactMimeType;
+        shouldSave = true;
+      }
+      if (shouldSave) await existingPatch.save();
       return res.status(200).json({
         message: "Patch already synced to backend",
         patch: existingPatch
       });
     }
 
-    const chainPatch = await contract.patches(patchId);
-    const chainPatchId = Number(chainPatch.id);
+    let chainPatch = null;
+    let chainPatchId = 0;
+    for (let attempt = 1; attempt <= 8; attempt++) {
+      chainPatch = await contract.patches(patchId);
+      chainPatchId = Number(chainPatch.id);
+      if (Number.isFinite(chainPatchId) && chainPatchId > 0) break;
+      if (attempt < 8) {
+        await sleep(1200);
+      }
+    }
     if (!Number.isFinite(chainPatchId) || chainPatchId <= 0) {
       return res.status(400).json({
         error: "On-chain patch struct is empty for this patchId. RPC may be lagging — retry in a few seconds.",
@@ -120,6 +162,8 @@ async function syncPatchFromTx(req, res, next) {
       publisher: normalizeAddress(chainPatch.publisher),
       ipfsHash: chainPatch.ipfsHash,
       fileHash: String(chainPatch.fileHash).toLowerCase(),
+      artifactFileName: sanitizedArtifactFileName || undefined,
+      artifactMimeType: sanitizedArtifactMimeType || undefined,
       active: Boolean(chainPatch.active),
       releaseTime: new Date(Number(chainPatch.releaseTime) * 1000)
     });

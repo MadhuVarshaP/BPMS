@@ -106,16 +106,31 @@ export default function DevicePatches() {
         if (!address) return;
         setLoading(true);
         try {
-            const [me, patchRes] = await Promise.all([
-                apiGet("/api/device/me", address).catch(() => ({ device: null })),
-                apiGet("/api/device/patches", address),
-            ]);
-            setProfile(((me as { device?: DeviceProfile | null }).device || null));
-            setPatches(((patchRes as { patches?: PatchRec[] }).patches || []));
+            const me = (await apiGet("/api/device/me", address).catch(() => ({ device: null }))) as {
+                device?: DeviceProfile | null;
+            };
+            const profileFromApi = me.device || null;
+            setProfile(profileFromApi);
+            if (!profileFromApi) {
+                setPatches([]);
+                return;
+            }
+            const patchRes = (await apiGet("/api/device/patches", address)) as { patches?: PatchRec[] };
+            setPatches(patchRes.patches || []);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : "Unable to load device patches";
+            if (message.toLowerCase().includes("insufficient permissions")) {
+                showToast("This wallet does not have device access. Please login with a registered device wallet.", "error");
+                router.push("/unauthorized");
+            } else {
+                showToast(message, "error");
+            }
+            setProfile(null);
+            setPatches([]);
         } finally {
             setLoading(false);
         }
-    }, [address]);
+    }, [address, router, showToast]);
 
     useEffect(() => {
         void load();

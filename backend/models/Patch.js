@@ -10,6 +10,8 @@ const patchSchema = new mongoose.Schema(
     publisher: { type: String, required: true, lowercase: true, trim: true },
     ipfsHash: { type: String, required: true, trim: true },
     fileHash: { type: String, required: true, trim: true },
+    artifactFileName: { type: String, trim: true },
+    artifactMimeType: { type: String, trim: true },
     active: { type: Boolean, default: true },
     releaseTime: { type: Date, required: true }
   },
